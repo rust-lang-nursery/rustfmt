@@ -394,8 +394,12 @@ macro_rules! skip_out_of_file_lines_range_visitor {
 
 // Wraps String in an Option. Returns Some when the string adheres to the
 // Rewrite constraints defined for the Rewrite trait and None otherwise.
-pub(crate) fn wrap_str(s: String, max_width: usize, shape: Shape) -> Option<String> {
-    if is_valid_str(&filter_normal_code(&s), max_width, shape) {
+pub(crate) fn wrap_str(s: String, config: &Config, shape: Shape) -> Option<String> {
+    if is_valid_str(
+        &filter_normal_code(&s, config.version()),
+        config.max_width(),
+        shape,
+    ) {
         Some(s)
     } else {
         None
@@ -583,7 +587,7 @@ pub(crate) fn trim_left_preserve_layout(
     indent: Indent,
     config: &Config,
 ) -> Option<String> {
-    let mut lines = LineClasses::new(orig);
+    let mut lines = LineClasses::new(orig, config.version());
     let first_line = lines.next().map(|(_, s)| s.trim_end().to_owned())?;
     let mut trimmed_lines = Vec::with_capacity(16);
 

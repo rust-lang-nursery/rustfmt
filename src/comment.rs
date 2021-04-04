@@ -5,7 +5,7 @@ use std::{self, borrow::Cow, iter};
 use itertools::{multipeek, MultiPeek};
 use rustc_span::Span;
 
-use crate::config::Config;
+use crate::config::{Config, Version};
 use crate::rewrite::RewriteContext;
 use crate::shape::{Indent, Shape};
 use crate::string::{rewrite_string, StringFormat};
@@ -1364,13 +1364,15 @@ where
 pub(crate) struct LineClasses<'a> {
     base: iter::Peekable<CharClasses<std::str::Chars<'a>>>,
     kind: FullCodeCharKind,
+    config_version: Version,
 }
 
 impl<'a> LineClasses<'a> {
-    pub(crate) fn new(s: &'a str) -> Self {
+    pub(crate) fn new(s: &'a str, config_version: Version) -> Self {
         LineClasses {
             base: CharClasses::new(s.chars()).peekable(),
             kind: FullCodeCharKind::Normal,
+            config_version,
         }
     }
 }
@@ -1388,7 +1390,9 @@ impl<'a> Iterator for LineClasses<'a> {
             None => unreachable!(),
         };
 
+        let mut prev_kind = FullCodeCharKind::Normal;
         while let Some((kind, c)) = self.base.next() {
+            prev_kind = self.kind;
             // needed to set the kind of the ending character on the last line
             self.kind = kind;
             if c == '\n' {
@@ -1404,6 +1408,12 @@ impl<'a> Iterator for LineClasses<'a> {
                     }
                     (FullCodeCharKind::InStringCommented, FullCodeCharKind::InComment) => {
                         FullCodeCharKind::EndStringCommented
+                    }
+                    (_, FullCodeCharKind::Normal)
+                        if prev_kind == FullCodeCharKind::EndComment
+                            && self.config_version == Version::Two =>
+                    {
+                        FullCodeCharKind::EndComment
                     }
                     _ => kind,
                 };
@@ -1585,9 +1595,9 @@ pub(crate) fn recover_comment_removed(
     }
 }
 
-pub(crate) fn filter_normal_code(code: &str) -> String {
+pub(crate) fn filter_normal_code(code: &str, config_version: Version) -> String {
     let mut buffer = String::with_capacity(code.len());
-    LineClasses::new(code).for_each(|(kind, line)| match kind {
+    LineClasses::new(code, config_version).for_each(|(kind, line)| match kind {
         FullCodeCharKind::Normal
         | FullCodeCharKind::StartString
         | FullCodeCharKind::InString
@@ -1905,13 +1915,32 @@ fn main() {
     println!("hello, world");
 }
 "#;
-        assert_eq!(s, filter_normal_code(s));
-        let s_with_comment = r#"
+        assert_eq!(s, filter_normal_code(s, Version::Two));
+        let s_with_line_comment = r#"
 fn main() {
     // hello, world
     println!("hello, world");
 }
 "#;
-        assert_eq!(s, filter_normal_code(s_with_comment));
+        assert_eq!(s, filter_normal_code(s_with_line_comment, Version::Two));
+        let s_with_block_comment = r#"
+fn main() {
+    /* hello, world */
+    println!("hello, world");
+}
+"#;
+        assert_eq!(s, filter_normal_code(s_with_block_comment, Version::Two));
+        let s_with_multi_line_comment = r#"
+fn main() {
+    /* hello,
+     * world
+     */
+    println!("hello, world");
+}
+"#;
+        assert_eq!(
+            s,
+            filter_normal_code(s_with_multi_line_comment, Version::Two)
+        );
     }
 }

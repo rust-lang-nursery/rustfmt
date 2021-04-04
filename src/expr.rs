@@ -198,13 +198,8 @@ pub(crate) fn format_expr(
             rewrite_chain(expr, context, shape)
         }
         ast::ExprKind::MacCall(ref mac) => {
-            rewrite_macro(mac, None, context, shape, MacroPosition::Expression).or_else(|| {
-                wrap_str(
-                    context.snippet(expr.span).to_owned(),
-                    context.config.max_width(),
-                    shape,
-                )
-            })
+            rewrite_macro(mac, None, context, shape, MacroPosition::Expression)
+                .or_else(|| wrap_str(context.snippet(expr.span).to_owned(), context.config, shape))
         }
         ast::ExprKind::Ret(None) => Some("return".to_owned()),
         ast::ExprKind::Ret(Some(ref expr)) => {
@@ -1187,11 +1182,7 @@ pub(crate) fn rewrite_literal(
 ) -> Option<String> {
     match l.kind {
         ast::LitKind::Str(_, ast::StrStyle::Cooked) => rewrite_string_lit(context, l.span, shape),
-        _ => wrap_str(
-            context.snippet(l.span).to_owned(),
-            context.config.max_width(),
-            shape,
-        ),
+        _ => wrap_str(context.snippet(l.span).to_owned(), context.config, shape),
     }
 }
 
@@ -1207,7 +1198,7 @@ fn rewrite_string_lit(context: &RewriteContext<'_>, span: Span, shape: Shape) ->
         {
             return Some(string_lit.to_owned());
         } else {
-            return wrap_str(string_lit.to_owned(), context.config.max_width(), shape);
+            return wrap_str(string_lit.to_owned(), context.config, shape);
         }
     }
 
@@ -1971,8 +1962,7 @@ fn choose_rhs<R: Rewrite>(
 
             match (orig_rhs, new_rhs) {
                 (Some(ref orig_rhs), Some(ref new_rhs))
-                    if wrap_str(new_rhs.clone(), context.config.max_width(), new_shape)
-                        .is_none() =>
+                    if wrap_str(new_rhs.clone(), context.config, new_shape).is_none() =>
                 {
                     Some(format!("{}{}", before_space_str, orig_rhs))
                 }

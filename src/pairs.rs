@@ -86,7 +86,7 @@ fn rewrite_pairs_one_line<T: Rewrite>(
         return None;
     }
 
-    wrap_str(result, context.config.max_width(), shape)
+    wrap_str(result, context.config, shape)
 }
 
 fn rewrite_pairs_multiline<T: Rewrite>(

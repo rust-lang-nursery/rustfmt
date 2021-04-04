@@ -1372,15 +1372,11 @@ impl MacroBranch {
                 }
             }
         };
-        let new_body = wrap_str(
-            new_body_snippet.snippet.to_string(),
-            config.max_width(),
-            shape,
-        )?;
+        let new_body = wrap_str(new_body_snippet.snippet.to_string(), &config, shape)?;
 
         // Indent the body since it is in a block.
         let indent_str = body_indent.to_string(&config);
-        let mut new_body = LineClasses::new(new_body.trim_end())
+        let mut new_body = LineClasses::new(new_body.trim_end(), config.version())
             .enumerate()
             .fold(
                 (String::new(), true),

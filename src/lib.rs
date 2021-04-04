@@ -348,7 +348,7 @@ fn format_code_block(
         let mut result = String::with_capacity(s.len() * 2);
         result.push_str(FN_MAIN_PREFIX);
         let mut need_indent = true;
-        for (kind, line) in LineClasses::new(s) {
+        for (kind, line) in LineClasses::new(s, config.version()) {
             if need_indent {
                 result.push_str(&indent.to_string(config));
             }
@@ -385,7 +385,10 @@ fn format_code_block(
         .unwrap_or_else(|| formatted.snippet.len());
     let mut is_indented = true;
     let indent_str = Indent::from_width(config, config.tab_spaces()).to_string(config);
-    for (kind, ref line) in LineClasses::new(&formatted.snippet[FN_MAIN_PREFIX.len()..block_len]) {
+    for (kind, ref line) in LineClasses::new(
+        &formatted.snippet[FN_MAIN_PREFIX.len()..block_len],
+        config.version(),
+    ) {
         if !is_first {
             result.push('\n');
         } else {

@@ -442,7 +442,7 @@ impl Rewrite for Chain {
 
         formatter.format_root(&self.parent, context, shape)?;
         if let Some(result) = formatter.pure_root() {
-            return wrap_str(result, context.config.max_width(), shape);
+            return wrap_str(result, context.config, shape);
         }
 
         // Decide how to layout the rest of the chain.
@@ -452,7 +452,7 @@ impl Rewrite for Chain {
         formatter.format_last_child(context, shape, child_shape)?;
 
         let result = formatter.join_rewrites(context, child_shape)?;
-        wrap_str(result, context.config.max_width(), shape)
+        wrap_str(result, context.config, shape)
     }
 }
 
@@ -813,7 +813,7 @@ impl<'a> ChainFormatter for ChainFormatterVisual<'a> {
                 .visual_indent(self.offset)
                 .sub_width(self.offset)?;
             let rewrite = item.rewrite(context, child_shape)?;
-            match wrap_str(rewrite, context.config.max_width(), shape) {
+            match wrap_str(rewrite, context.config, shape) {
                 Some(rewrite) => root_rewrite.push_str(&rewrite),
                 None => {
                     // We couldn't fit in at the visual indent, try the last
