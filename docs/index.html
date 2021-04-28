@@ -5,7 +5,7 @@
       <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/github-markdown-css/3.0.1/github-markdown.css" />
       <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/highlight.js/10.0.0/styles/github-gist.min.css">
       <script src="https://cdn.jsdelivr.net/npm/marked/marked.min.js"></script>
-      <script src="https://cdn.jsdelivr.net/npm/vue@2.6.10/dist/vue.js"></script>
+      <script src="https://cdn.jsdelivr.net/npm/vue@2.6.10"></script>
       <script src="https://unpkg.com/vue-async-computed@3.8.1"></script>
       <script src="https://cdnjs.cloudflare.com/ajax/libs/highlight.js/10.0.0/highlight.min.js"></script>
       <script src="https://cdnjs.cloudflare.com/ajax/libs/axios/0.18.0/axios.min.js"></script>
@@ -90,8 +90,6 @@
             const RustfmtLatestUrl = 'https://api.github.com/repos/rust-lang/rustfmt/releases/latest';
             const UrlHash = window.location.hash.replace(/^#/, '');
             const queryParams = new URLSearchParams(window.location.search);
-            const searchParam = queryParams.get('search');
-            const searchTerm = null !== searchParam ? searchParam : '';
             const versionParam = queryParams.get('version');
             const parseVersionParam = (version) => {
               if (version === 'master') return 'master';
@@ -105,7 +103,7 @@
                 aboutHtml: '',
                 configurationAboutHtml: '',
                 configurationDescriptions: [],
-                searchCondition: searchTerm,
+                searchCondition: '',
                 shouldStable: false,
                 version: versionNumber,
                 oldVersion: undefined,
@@ -163,7 +161,6 @@
                   ast.links = {};
 
                   queryParams.set('version', this.version);
-                  queryParams.set('search', this.searchCondition);
                   const curUrl = window.location.pathname +
                     '?' + queryParams.toString() + window.location.hash;
                   history.pushState(null, '', curUrl);
