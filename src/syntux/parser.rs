@@ -1,6 +1,7 @@
 use std::panic::{catch_unwind, AssertUnwindSafe};
 use std::path::{Path, PathBuf};
 
+use relative_path::RelativePath;
 use rustc_ast::token::{DelimToken, TokenKind};
 use rustc_ast::{ast, ptr};
 use rustc_errors::Diagnostic;
@@ -94,16 +95,21 @@ pub(crate) enum ParserError {
 }
 
 impl<'a> Parser<'a> {
+    // On windows, if the base path is specified with the windows path separator
+    // replace it with the expected '//' so that path traversal works as
+    // expected.
+    #[cfg(windows)]
     pub(crate) fn submod_path_from_attr(attrs: &[ast::Attribute], path: &Path) -> Option<PathBuf> {
-        let path_string = first_attr_value_str_by_name(attrs, sym::path)?.as_str();
-        // On windows, the base path might have the form
-        // `\\?\foo\bar` in which case it does not tolerate
-        // mixed `/` and `\` separators, so canonicalize
-        // `/` to `\`.
-        #[cfg(windows)]
-        let path_string = path_string.replace("/", "\\");
+        let mod_path = first_attr_value_str_by_name(attrs, sym::path)?
+            .as_str()
+            .replace(std::path::MAIN_SEPARATOR, "/");
+        Some(RelativePath::new(&mod_path).to_logical_path(&path))
+    }
 
-        Some(path.join(&*path_string))
+    #[cfg(not(windows))]
+    pub(crate) fn submod_path_from_attr(attrs: &[ast::Attribute], path: &Path) -> Option<PathBuf> {
+        let mod_path = first_attr_value_str_by_name(attrs, sym::path)?.as_str();
+        Some(RelativePath::new(&mod_path).to_logical_path(&path))
     }
 
     pub(crate) fn parse_file_as_module(
