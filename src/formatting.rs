@@ -266,14 +266,14 @@ impl FormattingError {
     }
 
     pub(crate) fn is_internal(&self) -> bool {
-        match self.kind {
+        matches!(
+            self.kind,
             ErrorKind::LineOverflow(..)
-            | ErrorKind::TrailingWhitespace
-            | ErrorKind::IoError(_)
-            | ErrorKind::ParseError
-            | ErrorKind::LostComment => true,
-            _ => false,
-        }
+                | ErrorKind::TrailingWhitespace
+                | ErrorKind::IoError(_)
+                | ErrorKind::ParseError
+                | ErrorKind::LostComment
+        )
     }
 
     pub(crate) fn msg_suffix(&self) -> &str {

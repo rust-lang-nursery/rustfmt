@@ -117,19 +117,19 @@ fn needs_block(block: &ast::Block, prefix: &str, context: &RewriteContext<'_>) -
 }
 
 fn veto_block(e: &ast::Expr) -> bool {
-    match e.kind {
+    matches!(
+        e.kind,
         ast::ExprKind::Call(..)
-        | ast::ExprKind::Binary(..)
-        | ast::ExprKind::Cast(..)
-        | ast::ExprKind::Type(..)
-        | ast::ExprKind::Assign(..)
-        | ast::ExprKind::AssignOp(..)
-        | ast::ExprKind::Field(..)
-        | ast::ExprKind::Index(..)
-        | ast::ExprKind::Range(..)
-        | ast::ExprKind::Try(..) => true,
-        _ => false,
-    }
+            | ast::ExprKind::Binary(..)
+            | ast::ExprKind::Cast(..)
+            | ast::ExprKind::Type(..)
+            | ast::ExprKind::Assign(..)
+            | ast::ExprKind::AssignOp(..)
+            | ast::ExprKind::Field(..)
+            | ast::ExprKind::Index(..)
+            | ast::ExprKind::Range(..)
+            | ast::ExprKind::Try(..)
+    )
 }
 
 // Rewrite closure with a single expression wrapping its body with block.
@@ -336,7 +336,7 @@ pub(crate) fn rewrite_last_closure(
 
         // We force to use block for the body of the closure for certain kinds of expressions.
         if is_block_closure_forced(context, body) {
-            return rewrite_closure_with_block(body, &prefix, context, body_shape).and_then(
+            return rewrite_closure_with_block(body, &prefix, context, body_shape).map(
                 |body_str| {
                     match fn_decl.output {
                         ast::FnRetTy::Default(..) if body_str.lines().count() <= 7 => {
@@ -344,15 +344,15 @@ pub(crate) fn rewrite_last_closure(
                             // closure.  However, if the closure has a return type, then we must
                             // keep the blocks.
                             match rewrite_closure_expr(body, &prefix, context, shape) {
-                                Some(ref single_line_body_str)
+                                Some(single_line_body_str)
                                     if !single_line_body_str.contains('\n') =>
                                 {
-                                    Some(single_line_body_str.clone())
+                                    single_line_body_str
                                 }
-                                _ => Some(body_str),
+                                _ => body_str,
                             }
                         }
-                        _ => Some(body_str),
+                        _ => body_str,
                     }
                 },
             );
@@ -377,10 +377,7 @@ pub(crate) fn rewrite_last_closure(
 pub(crate) fn args_have_many_closure(args: &[OverflowableItem<'_>]) -> bool {
     args.iter()
         .filter_map(OverflowableItem::to_expr)
-        .filter(|expr| match expr.kind {
-            ast::ExprKind::Closure(..) => true,
-            _ => false,
-        })
+        .filter(|expr| matches!(expr.kind, ast::ExprKind::Closure(..)))
         .count()
         > 1
 }
@@ -416,14 +413,14 @@ fn is_block_closure_forced_inner(expr: &ast::Expr, version: Version) -> bool {
 /// isn't parsed as (if true {...} else {...} | x) | 5
 // From https://github.com/rust-lang/rust/blob/master/src/libsyntax/parse/classify.rs.
 fn expr_requires_semi_to_be_stmt(e: &ast::Expr) -> bool {
-    match e.kind {
+    !matches!(
+        e.kind,
         ast::ExprKind::If(..)
-        | ast::ExprKind::Match(..)
-        | ast::ExprKind::Block(..)
-        | ast::ExprKind::While(..)
-        | ast::ExprKind::Loop(..)
-        | ast::ExprKind::ForLoop(..)
-        | ast::ExprKind::TryBlock(..) => false,
-        _ => true,
-    }
+            | ast::ExprKind::Match(..)
+            | ast::ExprKind::Block(..)
+            | ast::ExprKind::While(..)
+            | ast::ExprKind::Loop(..)
+            | ast::ExprKind::ForLoop(..)
+            | ast::ExprKind::TryBlock(..)
+    )
 }
