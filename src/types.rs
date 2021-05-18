@@ -657,7 +657,7 @@ impl Rewrite for ast::Ty {
                 let mut_str = format_mutability(mt.mutbl);
                 let mut_len = mut_str.len();
                 let mut result = String::with_capacity(128);
-                result.push_str("&");
+                result.push('&');
                 let ref_hi = context.snippet_provider.span_after(self.span(), "&");
                 let mut cmnt_lo = ref_hi;
 
@@ -680,7 +680,7 @@ impl Rewrite for ast::Ty {
                     } else {
                         result.push_str(&lt_str);
                     }
-                    result.push_str(" ");
+                    result.push(' ');
                     cmnt_lo = lifetime.ident.span.hi();
                 }
 
@@ -995,11 +995,7 @@ fn join_bounds_inner(
                     true,
                 )
                 .map(|v| (v, trailing_span, extendable)),
-                _ => Some((
-                    String::from(strs) + &trailing_str,
-                    trailing_span,
-                    extendable,
-                )),
+                _ => Some((strs + &trailing_str, trailing_span, extendable)),
             }
         },
     )?;
@@ -1036,10 +1032,7 @@ fn rewrite_lifetime_param(
 ) -> Option<String> {
     let result = generic_params
         .iter()
-        .filter(|p| match p.kind {
-            ast::GenericParamKind::Lifetime => true,
-            _ => false,
-        })
+        .filter(|p| matches!(p.kind, ast::GenericParamKind::Lifetime))
         .map(|lt| lt.rewrite(context, shape))
         .collect::<Option<Vec<_>>>()?
         .join(", ");

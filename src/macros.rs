@@ -61,10 +61,7 @@ pub(crate) enum MacroArg {
 
 impl MacroArg {
     fn is_item(&self) -> bool {
-        match self {
-            MacroArg::Item(..) => true,
-            _ => false,
-        }
+        matches!(self, MacroArg::Item(..))
     }
 }
 
@@ -179,10 +176,10 @@ fn return_macro_parse_failure_fallback(
         .lines()
         .last()
         .map(|closing_line| {
-            closing_line.trim().chars().all(|ch| match ch {
-                '}' | ')' | ']' => true,
-                _ => false,
-            })
+            closing_line
+                .trim()
+                .chars()
+                .all(|ch| matches!(ch, '}' | ')' | ']'))
         })
         .unwrap_or(false);
     if is_like_block_indent_style {
@@ -690,25 +687,22 @@ fn delim_token_to_str(
 
 impl MacroArgKind {
     fn starts_with_brace(&self) -> bool {
-        match *self {
+        matches!(
+            *self,
             MacroArgKind::Repeat(DelimToken::Brace, _, _, _)
-            | MacroArgKind::Delimited(DelimToken::Brace, _) => true,
-            _ => false,
-        }
+                | MacroArgKind::Delimited(DelimToken::Brace, _)
+        )
     }
 
     fn starts_with_dollar(&self) -> bool {
-        match *self {
-            MacroArgKind::Repeat(..) | MacroArgKind::MetaVariable(..) => true,
-            _ => false,
-        }
+        matches!(
+            *self,
+            MacroArgKind::Repeat(..) | MacroArgKind::MetaVariable(..)
+        )
     }
 
     fn ends_with_space(&self) -> bool {
-        match *self {
-            MacroArgKind::Separator(..) => true,
-            _ => false,
-        }
+        matches!(*self, MacroArgKind::Separator(..))
     }
 
     fn has_meta_var(&self) -> bool {
@@ -1137,35 +1131,35 @@ enum SpaceState {
 fn force_space_before(tok: &TokenKind) -> bool {
     debug!("tok: force_space_before {:?}", tok);
 
-    match tok {
+    matches!(
+        tok,
         TokenKind::Eq
-        | TokenKind::Lt
-        | TokenKind::Le
-        | TokenKind::EqEq
-        | TokenKind::Ne
-        | TokenKind::Ge
-        | TokenKind::Gt
-        | TokenKind::AndAnd
-        | TokenKind::OrOr
-        | TokenKind::Not
-        | TokenKind::Tilde
-        | TokenKind::BinOpEq(_)
-        | TokenKind::At
-        | TokenKind::RArrow
-        | TokenKind::LArrow
-        | TokenKind::FatArrow
-        | TokenKind::BinOp(_)
-        | TokenKind::Pound
-        | TokenKind::Dollar => true,
-        _ => false,
-    }
+            | TokenKind::Lt
+            | TokenKind::Le
+            | TokenKind::EqEq
+            | TokenKind::Ne
+            | TokenKind::Ge
+            | TokenKind::Gt
+            | TokenKind::AndAnd
+            | TokenKind::OrOr
+            | TokenKind::Not
+            | TokenKind::Tilde
+            | TokenKind::BinOpEq(_)
+            | TokenKind::At
+            | TokenKind::RArrow
+            | TokenKind::LArrow
+            | TokenKind::FatArrow
+            | TokenKind::BinOp(_)
+            | TokenKind::Pound
+            | TokenKind::Dollar
+    )
 }
 
 fn ident_like(tok: &Token) -> bool {
-    match tok.kind {
-        TokenKind::Ident(..) | TokenKind::Literal(..) | TokenKind::Lifetime(_) => true,
-        _ => false,
-    }
+    matches!(
+        tok.kind,
+        TokenKind::Ident(..) | TokenKind::Literal(..) | TokenKind::Lifetime(_)
+    )
 }
 
 fn next_space(tok: &TokenKind) -> SpaceState {
@@ -1399,7 +1393,7 @@ impl MacroBranch {
         // Undo our replacement of macro variables.
         // FIXME: this could be *much* more efficient.
         for (old, new) in &substs {
-            if old_body.find(new).is_some() {
+            if old_body.contains(new) {
                 debug!("rewrite_macro_def: bailing matching variable: `{}`", new);
                 return None;
             }
