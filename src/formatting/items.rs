@@ -2416,8 +2416,11 @@ fn rewrite_fn_base(
         _ => false,
     } && !fd.inputs.is_empty();
 
-    let mut params_last_line_contains_comment = false;
-    let mut no_params_and_over_max_width = false;
+    // Whether the return type should be forced on a newline, disconnected from the closing paren
+    // of the fn params.
+    let mut force_ret_on_nl = false;
+    // Whether the last line of the params string is a single closing paren.
+    let mut last_line_only_closing_paren = put_params_in_block;
 
     if put_params_in_block {
         param_indent = indent.block_indent(context.config);
@@ -2434,19 +2437,18 @@ fn rewrite_fn_base(
             fd.inputs.is_empty() && used_width + 1 > context.config.max_width();
         // If the last line of params contains comment, we cannot put the closing paren
         // on the same line.
-        params_last_line_contains_comment = param_str
+        let params_last_line_contains_comment = param_str
             .lines()
             .last()
             .map_or(false, |last_line| last_line.contains("//"));
 
         if closing_paren_overflow_max_width {
             result.push(')');
-            result.push_str(&indent.to_string_with_newline(context.config));
-            no_params_and_over_max_width = true;
+            force_ret_on_nl = true;
         } else if params_last_line_contains_comment {
             result.push_str(&indent.to_string_with_newline(context.config));
             result.push(')');
-            no_params_and_over_max_width = true;
+            last_line_only_closing_paren = true;
         } else {
             result.push(')');
         }
@@ -2454,13 +2456,18 @@ fn rewrite_fn_base(
 
     // Return type.
     if let ast::FnRetTy::Ty(..) = fd.output {
-        let mut ret_on_nl = false;
-        let ret_should_indent = match context.config.indent_style() {
-            // If our params are block layout then we surely must have space.
-            IndentStyle::Block if put_params_in_block || fd.inputs.is_empty() => false,
-            _ if params_last_line_contains_comment => false,
-            _ if result.contains('\n') || multi_line_ret_str => true,
-            _ => {
+        // The return type needs to be indented iff it is separated from the function parameters by
+        // a newline. E.g.
+        //   fn foo() -> T   // no indent
+        //
+        //   fn foo(
+        //      a: usize
+        //   ) -> T   // no indent
+        //
+        //   fn super_long_foo()
+        //      -> T   // indent
+        let ret_should_indent = !last_line_only_closing_paren
+            && (force_ret_on_nl || {
                 // If the return type would push over the max width, then put the return type on
                 // a new line. With the +1 for the signature length an additional space between
                 // the closing parenthesis of the param and the arrow '->' is considered.
@@ -2472,10 +2479,8 @@ fn rewrite_fn_base(
                     sig_length += 2;
                 }
 
-                ret_on_nl = sig_length > context.config.max_width();
-                ret_on_nl
-            }
-        };
+                sig_length > context.config.max_width()
+            });
         let ret_shape = if ret_should_indent {
             if context.config.indent_style() == IndentStyle::Visual {
                 let indent = if param_str.is_empty() {
@@ -2492,27 +2497,14 @@ fn rewrite_fn_base(
                 result.push_str(&indent.to_string_with_newline(context.config));
                 Shape::indented(indent, context.config)
             } else {
-                let mut ret_shape = Shape::indented(indent, context.config);
-                if param_str.is_empty() || ret_on_nl {
-                    // Aligning with non-existent params looks silly, as does aligning the return
-                    // type when it is on a newline entirely disconnected from the parentheses of
-                    // the parameters.
-                    force_new_line_for_brace = true;
-                    ret_shape = if context.use_block_indent() && !ret_on_nl {
-                        ret_shape.offset_left(4).unwrap_or(ret_shape)
-                    } else {
-                        ret_shape.indent = ret_shape.indent + 4;
-                        ret_shape
-                    };
-                }
+                force_new_line_for_brace = true;
 
+                let ret_shape = Shape::indented(indent, context.config).block_indent(4);
                 result.push_str(&ret_shape.indent.to_string_with_newline(context.config));
                 ret_shape
             }
         } else {
-            if !param_str.is_empty() || !no_params_and_over_max_width {
-                result.push(' ');
-            }
+            result.push(' ');
 
             let ret_shape = Shape::indented(indent, context.config);
             ret_shape
@@ -2520,7 +2512,7 @@ fn rewrite_fn_base(
                 .unwrap_or(ret_shape)
         };
 
-        if multi_line_ret_str || ret_should_indent {
+        if ret_should_indent {
             // Now that we know the proper indent and width, we need to
             // re-layout the return type.
             let ret_str = fd.output.rewrite(context, ret_shape)?;
