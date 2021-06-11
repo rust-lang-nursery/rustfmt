@@ -8,8 +8,7 @@ fn main() {
     }
 
 
-    'label: loop
-    // loop comment
+    'label: loop // loop comment
     {
         let foo = ();
     }

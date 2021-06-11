@@ -4,8 +4,7 @@ fn main() {
         let bar = ();
     }
 
-    if false
-    // lone if comment
+    if false // lone if comment
     {
         let foo = ();
         let bar = ();
@@ -26,17 +25,14 @@ fn main() {
         let baz = ();
     }
 
-    if true
-    // else-if-chain if comment
+    if true // else-if-chain if comment
     {
         let foo = ();
-    } else if false
-    // else-if-chain else-if comment
+    } else if false // else-if-chain else-if comment
     {
         let foo = ();
         let bar = ();
-    } else
-    // else-if-chain else comment
+    } else // else-if-chain else comment
     {
         let foo = ();
         let bar = ();

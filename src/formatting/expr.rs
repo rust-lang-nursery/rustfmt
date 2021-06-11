@@ -1000,14 +1000,12 @@ impl<'a> ControlFlow<'a> {
             },
         );
 
-        let between_kwd_cond_comment = extract_comment(between_kwd_cond, context, shape);
+        let between_kwd_cond_comment = rewrite_missing_comment(between_kwd_cond, shape, context);
 
         let after_cond_comment =
-            extract_comment(mk_sp(cond_span.hi(), self.block.span.lo()), context, shape);
+            rewrite_missing_comment(mk_sp(cond_span.hi(), self.block.span.lo()), shape, context);
 
-        let block_sep = if self.cond.is_none() && between_kwd_cond_comment.is_some() {
-            ""
-        } else if context.config.control_brace_style() == ControlBraceStyle::AlwaysNextLine
+        let block_sep = if context.config.control_brace_style() == ControlBraceStyle::AlwaysNextLine
             || force_newline_brace
         {
             alt_block_sep
@@ -1015,31 +1013,69 @@ impl<'a> ControlFlow<'a> {
             " "
         };
 
-        let used_width = if pat_expr_string.contains('\n') {
+        /* Combine with pre condition comment */
+        let label_and_keyword = &format!("{}{}", label_string, self.keyword);
+        let cond_with_between_kwd_cond_comment = if between_kwd_cond_comment
+            .as_ref()
+            .map_or(true, |c| c.is_empty())
+        {
+            format!(
+                "{}{}{}",
+                label_and_keyword,
+                if pat_expr_string.is_empty() || pat_expr_string.starts_with('\n') {
+                    ""
+                } else {
+                    " "
+                },
+                pat_expr_string,
+            )
+        } else {
+            combine_strs_with_missing_comments(
+                context,
+                &label_and_keyword,
+                &pat_expr_string,
+                between_kwd_cond,
+                shape,
+                true,
+            )?
+        };
+
+        /* Combine with post-condition comment */
+        let cond_with_after_cond_comment = combine_strs_with_missing_comments(
+            context,
+            &cond_with_between_kwd_cond_comment,
+            "",
+            mk_sp(cond_span.hi(), self.block.span.lo()),
+            shape,
+            true,
+        )?;
+
+        /* Add separator before block */
+        let last = cond_with_after_cond_comment.lines().last()?.trim_end();
+        let closing_sep = if last.trim_start().is_empty() {
+            ""
+        } else if after_cond_comment
+            .as_ref()
+            .map_or(false, |s| s.starts_with("//"))
+        {
+            alt_block_sep
+        } else if last.len() + brace_overhead > context.config.max_width() {
+            alt_block_sep
+        } else {
+            block_sep
+        };
+
+        let cond_string = format!("{}{}", cond_with_after_cond_comment, closing_sep);
+        let used_width = if closing_sep.contains('\n') {
+            closing_sep.len()
+        } else if pat_expr_string.contains('\n') {
             last_line_width(&pat_expr_string)
         } else {
             // 2 = spaces after keyword and condition.
             label_string.len() + self.keyword.len() + pat_expr_string.len() + 2
         };
 
-        Some((
-            format!(
-                "{}{}{}{}{}",
-                label_string,
-                self.keyword,
-                between_kwd_cond_comment.as_ref().map_or(
-                    if pat_expr_string.is_empty() || pat_expr_string.starts_with('\n') {
-                        ""
-                    } else {
-                        " "
-                    },
-                    |s| &**s,
-                ),
-                pat_expr_string,
-                after_cond_comment.as_ref().map_or(block_sep, |s| &**s)
-            ),
-            used_width,
-        ))
+        Some((cond_string, used_width))
     }
 }
 
@@ -1049,6 +1085,7 @@ impl<'a> Rewrite for ControlFlow<'a> {
 
         let alt_block_sep = &shape.indent.to_string_with_newline(context.config);
         let (cond_str, used_width) = self.rewrite_cond(context, shape, alt_block_sep)?;
+
         // If `used_width` is 0, it indicates that whole control flow is written in a single line.
         if used_width == 0 {
             return Some(cond_str);
@@ -1124,7 +1161,7 @@ impl<'a> Rewrite for ControlFlow<'a> {
                     .span_after(mk_sp(self.block.span.hi(), else_block.span.lo()), "else"),
                 else_block.span.lo(),
             );
-            let after_else_comment = extract_comment(after_else, context, shape);
+            let after_else_comment = rewrite_missing_comment(after_else, shape, context);
 
             let between_sep = match context.config.control_brace_style() {
                 ControlBraceStyle::AlwaysNextLine | ControlBraceStyle::ClosingNextLine => {
@@ -1137,13 +1174,49 @@ impl<'a> Rewrite for ControlFlow<'a> {
                 _ => " ",
             };
 
-            result.push_str(&format!(
-                "{}else{}",
+            let brace_overhead =
+                if context.config.control_brace_style() != ControlBraceStyle::AlwaysNextLine {
+                    2
+                } else {
+                    0
+                };
+
+            // Combine with pre-else comment
+            let else_with_pre_comment = format!(
+                "{}else",
                 between_kwd_else_block_comment
                     .as_ref()
                     .map_or(between_sep, |s| &**s),
-                after_else_comment.as_ref().map_or(after_sep, |s| &**s),
-            ));
+            );
+
+            /* Combine with post-else comment */
+            let else_with_post_comment = combine_strs_with_missing_comments(
+                context,
+                &else_with_pre_comment,
+                "",
+                after_else,
+                shape,
+                true,
+            )?;
+
+            /* Add separator befor block */
+            let last = else_with_post_comment.lines().last()?.trim_end();
+            let closing_sep = if last.trim_start().is_empty() || last.trim_start() == "\n" {
+                ""
+            } else if after_else_comment
+                .as_ref()
+                .map_or(false, |s| s.starts_with("//"))
+            {
+                alt_block_sep
+            } else if last.len() + brace_overhead > context.config.max_width() {
+                alt_block_sep
+            } else {
+                after_sep
+            };
+            let else_string = format!("{}{}", else_with_post_comment, closing_sep);
+
+            result.push_str(&else_string);
+
             result.push_str(&rewrite?);
         }
 
