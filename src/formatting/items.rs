@@ -1192,11 +1192,12 @@ pub(crate) fn format_trait(
             }
             result.push_str(&where_clause_str);
         }
-        let pre_block_span = if !generics.where_clause.predicates.is_empty() {
-            mk_sp(generics.where_clause.span.hi(), item.span.hi())
-        } else {
-            item.span
-        };
+        let pre_block_span =
+            if !generics.where_clause.predicates.is_empty() || !generics.params.is_empty() {
+                mk_sp(generics.where_clause.span.hi(), item.span.hi())
+            } else {
+                item.span
+            };
         let pre_block_snippet = context.snippet(pre_block_span);
         if let Some(lo) = pre_block_snippet.find('/') {
             // 1 = `{`
