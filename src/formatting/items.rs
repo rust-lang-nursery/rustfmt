@@ -34,6 +34,7 @@ use crate::formatting::{
     vertical::rewrite_with_alignment,
     visitor::FmtVisitor,
 };
+use std::ops::Add;
 
 const DEFAULT_VISIBILITY: ast::Visibility = ast::Visibility {
     kind: ast::VisibilityKind::Inherited,
@@ -2528,34 +2529,6 @@ fn rewrite_fn_base(
         } else {
             result.push_str(&ret_str);
         }
-
-        if where_clause.predicates.is_empty() {
-            // Comment between return type and the end of the decl.
-            // Even if there are no predicates in the where clause, the "where" kw may be present,
-            // so start the snippet after it.
-            let snippet_lo = where_clause.span.hi();
-            let snippet_hi = span.hi();
-            let snippet = context.snippet(mk_sp(snippet_lo, snippet_hi));
-            // Try to preserve the layout of the original snippet.
-            let original_starts_with_newline = snippet
-                .find(|c| c != ' ')
-                .map_or(false, |i| starts_with_newline(&snippet[i..]));
-            let original_ends_with_newline = snippet
-                .rfind(|c| c != ' ')
-                .map_or(false, |i| snippet[i..].ends_with('\n'));
-            let snippet = snippet.trim();
-            if !snippet.is_empty() {
-                result.push(if original_starts_with_newline {
-                    '\n'
-                } else {
-                    ' '
-                });
-                result.push_str(snippet);
-                if original_ends_with_newline {
-                    force_new_line_for_brace = true;
-                }
-            }
-        }
     }
 
     let pos_before_where = match fd.output {
@@ -2585,27 +2558,44 @@ fn rewrite_fn_base(
         pos_before_where,
         option,
     )?;
-    // If there are neither where-clause nor return type, we may be missing comments between
-    // params and `{`.
-    if where_clause_str.is_empty() {
-        if let ast::FnRetTy::Default(ret_span) = fd.output {
-            match recover_missing_comment_in_span(
-                mk_sp(params_span.hi(), ret_span.hi()),
-                shape,
-                context,
-                last_line_width(&result),
-            ) {
-                Some(ref missing_comment) if !missing_comment.is_empty() => {
-                    result.push_str(missing_comment);
-                    force_new_line_for_brace = true;
-                }
-                _ => {}
-            }
-        }
-    }
 
     result.push_str(&where_clause_str);
-
+    if where_clause.predicates.is_empty() {
+        // Comment between return type and the end of the decl.
+        // Even if there are no predicates in the where clause, the "where" kw may be present,
+        // so start the snippet after it.
+        let snippet_lo = where_clause.span.hi();
+        let snippet_hi = span.hi();
+        let comment_indent = match where_clause.has_where_token {
+            true => shape.indent.add(context.config.tab_spaces()),
+            false => shape.indent,
+        };
+        let mut comment_shape = shape;
+        comment_shape.indent = comment_indent;
+        let missing_comment = recover_missing_comment_in_span(
+            mk_sp(snippet_lo, snippet_hi),
+            comment_shape,
+            context,
+            comment_indent.width(),
+        )
+        .unwrap_or(String::new());
+        if !missing_comment.is_empty() {
+            // If the comment is more than one line, start it at the line after where
+            if where_clause.has_where_token {
+                result.push_str(&*format!(
+                    "\n{}where\n{}",
+                    (shape.indent).to_string(context.config),
+                    missing_comment.trim_start_matches('\n'),
+                ));
+            } else {
+                result.push_str(&*missing_comment);
+            }
+            force_new_line_for_brace = context
+                .snippet(mk_sp(snippet_lo, snippet_hi))
+                .trim_end_matches(' ')
+                .ends_with('\n');
+        }
+    }
     let ends_with_comment = last_line_contains_single_line_comment(&result);
     force_new_line_for_brace |= ends_with_comment;
     force_new_line_for_brace |=

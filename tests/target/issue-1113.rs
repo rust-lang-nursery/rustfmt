@@ -25,9 +25,9 @@ pub fn foo() -> fmt::Result
 }
 
 pub fn foo() -> fmt::Result /*
-                             *
-                             *
-                             */
+ *
+ *
+ */
 {
     panic!()
 }

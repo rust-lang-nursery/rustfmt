@@ -115,3 +115,14 @@ fn f<T: AsUnindented<Output<'static> = U>, U>()
     where U: AsUnindented<Output<'static> = i32>
 {
 }
+
+fn foo2<T>()
+    where T: FnOnce() // Comments
+{
+}
+
+fn foo3<T, U>()
+    where T: FnOnce(), // Comments
+          U: FnOnce()
+{
+}

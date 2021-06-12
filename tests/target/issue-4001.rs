@@ -1,3 +1,5 @@
-fn unit() -> () /* comment */ {
+fn unit() -> ()
+where
+    /* comment */ {
     ()
 }
