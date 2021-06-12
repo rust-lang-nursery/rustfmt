@@ -50,13 +50,15 @@ impl<'a> FmtVisitor<'a> {
             self.last_pos = end;
             return;
         }
-        self.format_missing_inner(end, |this, last_snippet, _| this.push_str(last_snippet));
+        self.format_missing_inner(end, true, |this, last_snippet, _| {
+            this.push_str(last_snippet)
+        });
         self.normalize_vertical_spaces = false;
     }
 
     pub(crate) fn format_missing_with_indent(&mut self, end: BytePos) {
         let config = self.config;
-        self.format_missing_inner(end, |this, last_snippet, snippet| {
+        self.format_missing_inner(end, true, |this, last_snippet, snippet| {
             this.push_str(last_snippet.trim_end());
             if last_snippet == snippet && !this.output_at_start() {
                 // No new lines in the snippet.
@@ -69,8 +71,15 @@ impl<'a> FmtVisitor<'a> {
     }
 
     pub(crate) fn format_missing_no_indent(&mut self, end: BytePos) {
-        self.format_missing_inner(end, |this, last_snippet, _| {
+        self.format_missing_inner(end, true, |this, last_snippet, _| {
             this.push_str(last_snippet.trim_end());
+        });
+        self.normalize_vertical_spaces = false;
+    }
+
+    pub(crate) fn format_missing_before_skip(&mut self, end: BytePos) {
+        self.format_missing_inner(end, false, |this, last_snippet, _| {
+            this.push_str(last_snippet);
         });
         self.normalize_vertical_spaces = false;
     }
@@ -78,6 +87,7 @@ impl<'a> FmtVisitor<'a> {
     fn format_missing_inner<F: Fn(&mut FmtVisitor<'_>, &str, &str)>(
         &mut self,
         end: BytePos,
+        trim_last_line: bool, // Keep last line contents when snippet is empty
         process_last_snippet: F,
     ) {
         let start = self.last_pos;
@@ -110,7 +120,17 @@ impl<'a> FmtVisitor<'a> {
         if snippet.trim().is_empty() && !out_of_file_lines_range!(self, span) {
             // Keep vertical spaces within range.
             self.push_vertical_spaces(count_newlines(snippet));
-            process_last_snippet(self, "", snippet);
+            if trim_last_line {
+                process_last_snippet(self, "", snippet);
+            } else {
+                let last_nl = snippet.rfind('\n');
+                let first = if let Some(last) = last_nl {
+                    last + 1
+                } else {
+                    0
+                };
+                process_last_snippet(self, &snippet[first..], "");
+            }
         } else {
             self.write_snippet(span, &process_last_snippet);
         }

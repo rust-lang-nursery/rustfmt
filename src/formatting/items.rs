@@ -892,8 +892,14 @@ pub(crate) fn format_impl(
             let inner_indent_str = visitor.block_indent.to_string_with_newline(context.config);
             let outer_indent_str = offset.block_only().to_string_with_newline(context.config);
 
-            result.push_str(&inner_indent_str);
-            result.push_str(visitor.buffer.trim());
+            if visitor.buffer.starts_with("\n") {
+                // Starts with kipped code - first line not formatted
+                result.push_str(visitor.buffer.trim_end());
+            } else {
+                // First line not kipped code - first line is formatted
+                result.push_str(&inner_indent_str);
+                result.push_str(visitor.buffer.trim());
+            }
             result.push_str(&outer_indent_str);
         } else if need_newline || !context.config.empty_item_single_line() {
             result.push_str(&sep);

@@ -154,7 +154,7 @@ impl<'b, 'a: 'b> FmtVisitor<'a> {
             ast::StmtKind::Local(..) | ast::StmtKind::Expr(..) | ast::StmtKind::Semi(..) => {
                 let attrs = get_attrs_from_stmt(stmt.as_ast_node());
                 if contains_skip(attrs) {
-                    self.push_skipped_with_span(
+                    self.push_skipped_with_span_non_impl(
                         attrs,
                         stmt.span(),
                         get_span_without_attrs(stmt.as_ast_node()),
@@ -167,7 +167,7 @@ impl<'b, 'a: 'b> FmtVisitor<'a> {
             }
             ast::StmtKind::MacCall(ref mac_stmt) => {
                 if self.visit_attrs(&mac_stmt.attrs, ast::AttrStyle::Outer) {
-                    self.push_skipped_with_span(
+                    self.push_skipped_with_span_non_impl(
                         &mac_stmt.attrs,
                         stmt.span(),
                         get_span_without_attrs(stmt.as_ast_node()),
@@ -486,7 +486,7 @@ impl<'b, 'a: 'b> FmtVisitor<'a> {
             // For use/extern crate items, skip rewriting attributes but check for a skip attribute.
             ast::ItemKind::Use(..) | ast::ItemKind::ExternCrate(_) => {
                 if contains_skip(attrs) {
-                    self.push_skipped_with_span(attrs.as_slice(), item.span(), item.span());
+                    self.push_skipped_with_span_non_impl(attrs.as_slice(), item.span(), item.span);
                     false
                 } else {
                     true
@@ -495,7 +495,11 @@ impl<'b, 'a: 'b> FmtVisitor<'a> {
             // Module is inline, in this case we treat it like any other item.
             _ if !is_mod_decl(item) => {
                 if self.visit_attrs(&item.attrs, ast::AttrStyle::Outer) {
-                    self.push_skipped_with_span(item.attrs.as_slice(), item.span(), item.span());
+                    self.push_skipped_with_span_non_impl(
+                        item.attrs.as_slice(),
+                        item.span(),
+                        item.span,
+                    );
                     false
                 } else {
                     true
@@ -515,7 +519,11 @@ impl<'b, 'a: 'b> FmtVisitor<'a> {
             }
             _ => {
                 if self.visit_attrs(&item.attrs, ast::AttrStyle::Outer) {
-                    self.push_skipped_with_span(item.attrs.as_slice(), item.span(), item.span());
+                    self.push_skipped_with_span_non_impl(
+                        item.attrs.as_slice(),
+                        item.span(),
+                        item.span,
+                    );
                     false
                 } else {
                     true
@@ -671,7 +679,7 @@ impl<'b, 'a: 'b> FmtVisitor<'a> {
         skip_out_of_file_lines_range_visitor!(self, ti.span);
 
         if self.visit_attrs(&ti.attrs, ast::AttrStyle::Outer) {
-            self.push_skipped_with_span(ti.attrs.as_slice(), ti.span, ti.span);
+            self.push_skipped_with_span_non_impl(ti.attrs.as_slice(), ti.span(), ti.span);
             return;
         }
         let skip_context_outer = self.skip_context.clone();
@@ -731,7 +739,7 @@ impl<'b, 'a: 'b> FmtVisitor<'a> {
         skip_out_of_file_lines_range_visitor!(self, ii.span);
 
         if self.visit_attrs(&ii.attrs, ast::AttrStyle::Outer) {
-            self.push_skipped_with_span(ii.attrs.as_slice(), ii.span, ii.span);
+            self.push_skipped_with_span_impl(ii.attrs.as_slice(), ii.span(), ii.span);
             return;
         }
         let skip_context_outer = self.skip_context.clone();
@@ -831,19 +839,22 @@ impl<'b, 'a: 'b> FmtVisitor<'a> {
     }
 
     #[allow(clippy::needless_pass_by_value)]
-    fn push_rewrite_inner(&mut self, span: Span, rewrite: Option<String>) {
+    fn push_rewrite_inner(&mut self, span: Span, rewrite: Option<String>, trim_start: bool) {
         if let Some(ref s) = rewrite {
             self.push_str(s);
         } else {
-            let snippet = self.snippet(span);
-            self.push_str(snippet.trim());
+            let mut snippet = self.snippet(span).trim_end();
+            if trim_start {
+                snippet = snippet.trim_start()
+            };
+            self.push_str(snippet);
         }
         self.last_pos = source!(self, span).hi();
     }
 
     pub(crate) fn push_rewrite(&mut self, span: Span, rewrite: Option<String>) {
         self.format_missing_with_indent(source!(self, span).lo());
-        self.push_rewrite_inner(span, rewrite);
+        self.push_rewrite_inner(span, rewrite, true);
     }
 
     pub(crate) fn push_skipped_with_span(
@@ -851,8 +862,8 @@ impl<'b, 'a: 'b> FmtVisitor<'a> {
         attrs: &[ast::Attribute],
         item_span: Span,
         main_span: Span,
+        trim_start: bool,
     ) {
-        self.format_missing_with_indent(source!(self, item_span).lo());
         // do not take into account the lines with attributes as part of the skipped range
         let attrs_end = attrs
             .iter()
@@ -864,11 +875,31 @@ impl<'b, 'a: 'b> FmtVisitor<'a> {
         // or it can be on the same line as the last attribute.
         // So here we need to take a minimum between the two.
         let lo = std::cmp::min(attrs_end + 1, first_line);
-        self.push_rewrite_inner(item_span, None);
+        self.push_rewrite_inner(item_span, None, trim_start);
         let hi = self.line_number + 1;
         self.skipped_range
             .borrow_mut()
             .push(NonFormattedRange::new(lo, hi));
+    }
+
+    pub(crate) fn push_skipped_with_span_impl(
+        &mut self,
+        attrs: &[ast::Attribute],
+        item_span: Span,
+        main_span: Span,
+    ) {
+        self.format_missing_before_skip(source!(self, item_span).lo());
+        self.push_skipped_with_span(attrs, item_span, main_span, false);
+    }
+
+    pub(crate) fn push_skipped_with_span_non_impl(
+        &mut self,
+        attrs: &[ast::Attribute],
+        item_span: Span,
+        main_span: Span,
+    ) {
+        self.format_missing_with_indent(source!(self, item_span).lo());
+        self.push_skipped_with_span(attrs, item_span, main_span, true);
     }
 
     pub(crate) fn from_context(ctx: &'a RewriteContext<'_>) -> FmtVisitor<'a> {
