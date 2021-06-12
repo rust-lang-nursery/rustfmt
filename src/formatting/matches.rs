@@ -7,7 +7,9 @@ use rustc_span::{BytePos, Span};
 
 use crate::config::{lists::*, Config, ControlBraceStyle, IndentStyle, MatchArmLeadingPipe};
 use crate::formatting::{
-    comment::{combine_strs_with_missing_comments, rewrite_comment},
+    comment::{
+        combine_strs_with_missing_comments, contains_comment, rewrite_comment, FindUncommented,
+    },
     expr::{
         format_expr, is_empty_block, is_simple_block, is_unsafe_block, prefer_next_line,
         rewrite_cond, ExprType, RhsTactics,
@@ -260,6 +262,38 @@ fn rewrite_match_arm(
 
     let pats_str = arm.pat.rewrite(context, pat_shape)?;
 
+    // Comments
+    let (pat_if_span, if_guard_span, guard_arrow_span) = if let Some(guard) = &arm.guard {
+        let pat_hi = arm.pat.span.hi();
+        let guard_lo = guard.span.lo();
+        let guard_hi = guard.span.hi();
+
+        let pat_guard_span = mk_sp(pat_hi, guard_lo);
+        let pat_guard_snip = context.snippet_provider.span_to_snippet(pat_guard_span)?;
+        let if_index = pat_guard_snip.find_last_uncommented("if")?;
+        let if_lo = pat_hi + BytePos(if_index as u32);
+        // 2 = if
+        let if_hi = if_lo + BytePos(2);
+
+        let guard_body_span = mk_sp(guard_hi, arm.body.span.lo());
+        let guard_body_snip = context.snippet_provider.span_to_snippet(guard_body_span)?;
+        let arrow_index = guard_body_snip.find_last_uncommented("=")?;
+        let arrow_pos = guard_hi + BytePos(arrow_index as u32);
+
+        (
+            mk_sp(pat_hi, if_lo),
+            Some(mk_sp(if_hi, guard_lo)),
+            Some(mk_sp(guard.span.hi(), arrow_pos)),
+        )
+    } else {
+        let pat_hi = arm.pat.span.hi();
+        let pat_body_span = mk_sp(pat_hi, arm.body.span.lo());
+        let pat_body_snip = context.snippet_provider.span_to_snippet(pat_body_span)?;
+        let arrow_index = pat_body_snip.find_last_uncommented("=")?;
+        let arrow_pos = pat_hi + BytePos(arrow_index as u32);
+        (mk_sp(pat_hi, arrow_pos), None, None)
+    };
+
     // Guard
     let block_like_pat = trimmed_last_line_width(&pats_str) <= context.config.tab_spaces();
     let new_line_guard = pats_str.contains('\n') && !block_like_pat;
@@ -269,18 +303,34 @@ fn rewrite_match_arm(
         shape,
         trimmed_last_line_width(&pats_str),
         new_line_guard,
+        if_guard_span,
     )?;
+
+    let guard_pat_str = if contains_comment(context.snippet_provider.span_to_snippet(pat_if_span)?)
+    {
+        combine_strs_with_missing_comments(
+            context,
+            &pats_str,
+            &guard_str.trim_start(),
+            pat_if_span,
+            shape,
+            true,
+        )?
+    } else {
+        format!("{}{}", pats_str, guard_str)
+    };
 
     let lhs_str = combine_strs_with_missing_comments(
         context,
         &attrs_str,
-        &format!("{}{}{}", pipe_str, pats_str, guard_str),
+        &format!("{}{}", pipe_str, guard_pat_str.trim()),
         missing_span,
         shape,
         false,
     )?;
 
     let arrow_span = mk_sp(arm.pat.span.hi(), arm.body.span().lo());
+
     rewrite_match_body(
         context,
         &arm.body,
@@ -289,6 +339,7 @@ fn rewrite_match_arm(
         guard_str.contains('\n'),
         arrow_span,
         is_last,
+        guard_arrow_span,
     )
 }
 
@@ -365,6 +416,7 @@ fn rewrite_match_body(
     has_guard: bool,
     arrow_span: Span,
     is_last: bool,
+    guard_comment_span: Option<Span>,
 ) -> Option<String> {
     let was_block = matches!(body.kind, ast::ExprKind::Block(..));
 
@@ -392,7 +444,22 @@ fn rewrite_match_body(
             "()" => ("{}", ""),
             _ => (body_str, comma),
         };
-        Some(format!("{} =>{}{}{}", pats_str, block_sep, body, comma))
+        match guard_comment_span {
+            Some(cmnt_span)
+                if contains_comment(context.snippet_provider.span_to_snippet(cmnt_span)?) =>
+            {
+                combine_strs_with_missing_comments(
+                    context,
+                    pats_str,
+                    &format!("=>{}{}{}", block_sep, body, comma),
+                    cmnt_span,
+                    shape,
+                    true,
+                )
+            }
+
+            _ => Some(format!("{} =>{}{}{}", pats_str, block_sep, body, comma)),
+        }
     };
 
     let next_line_indent = if !is_block || is_empty_block {
@@ -426,8 +493,19 @@ fn rewrite_match_body(
     let combine_next_line_body = |body_str: &str| {
         let nested_indent_str = next_line_indent.to_string_with_newline(context.config);
         if is_block {
-            let mut result = pats_str.to_owned();
-            result.push_str(" =>");
+            let mut result = match guard_comment_span {
+                Some(cmnt_span)
+                    if contains_comment(context.snippet_provider.span_to_snippet(cmnt_span)?) =>
+                {
+                    combine_strs_with_missing_comments(
+                        context, pats_str, "=>", cmnt_span, shape, true,
+                    )?
+                }
+
+                _ => {
+                    format!("{} =>", pats_str)
+                }
+            };
             if !arrow_comment.is_empty() {
                 result.push_str(&nested_indent_str);
                 result.push_str(&arrow_comment);
@@ -467,8 +545,18 @@ fn rewrite_match_body(
         // if match arm was a block consisting of one expression,
         // and it was flattened, we need to retain comment before
         // the arm body block.
-        let mut result = pats_str.to_owned();
-        result.push_str(" =>");
+        let mut result = match guard_comment_span {
+            Some(cmnt_span)
+                if contains_comment(context.snippet_provider.span_to_snippet(cmnt_span)?) =>
+            {
+                combine_strs_with_missing_comments(context, pats_str, "=>", cmnt_span, shape, true)?
+            }
+
+            _ => {
+                format!("{} =>", pats_str)
+            }
+        };
+
         if !arrow_comment.is_empty() && was_block {
             result.push_str(&indent_str);
             result.push_str(&arrow_comment);
@@ -544,8 +632,12 @@ fn rewrite_guard(
     // the arm (excludes offset).
     pattern_width: usize,
     multiline_pattern: bool,
+    // Span that contains comments between if and condition
+    comment_span: Option<Span>,
 ) -> Option<String> {
     if let Some(ref guard) = *guard {
+        let has_comment =
+            contains_comment(context.snippet_provider.span_to_snippet(comment_span?)?);
         // First try to fit the guard string on the same line as the pattern.
         // 4 = ` if `, 5 = ` => {`
         let cond_shape = shape
@@ -555,7 +647,18 @@ fn rewrite_guard(
             if let Some(cond_shape) = cond_shape {
                 if let Some(cond_str) = guard.rewrite(context, cond_shape) {
                     if !cond_str.contains('\n') || pattern_width <= context.config.tab_spaces() {
-                        return Some(format!(" if {}", cond_str));
+                        if has_comment {
+                            return combine_strs_with_missing_comments(
+                                context,
+                                " if",
+                                &cond_str,
+                                comment_span?,
+                                cond_shape,
+                                true,
+                            );
+                        } else {
+                            return Some(format!(" if {}", cond_str));
+                        }
                     }
                 }
             }
@@ -568,11 +671,25 @@ fn rewrite_guard(
             .and_then(|s| s.sub_width(5));
         if let Some(cond_shape) = cond_shape {
             if let Some(cond_str) = guard.rewrite(context, cond_shape) {
-                return Some(format!(
-                    "{}if {}",
-                    cond_shape.indent.to_string_with_newline(context.config),
-                    cond_str
-                ));
+                if has_comment {
+                    return combine_strs_with_missing_comments(
+                        context,
+                        &format!(
+                            "{}if",
+                            cond_shape.indent.to_string_with_newline(context.config)
+                        ),
+                        &cond_str,
+                        comment_span?,
+                        cond_shape,
+                        true,
+                    );
+                } else {
+                    return Some(format!(
+                        "{}if {}",
+                        cond_shape.indent.to_string_with_newline(context.config),
+                        cond_str
+                    ));
+                }
             }
         }
 
