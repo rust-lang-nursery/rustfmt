@@ -474,6 +474,14 @@ fn get_targets_recursive(
                 .iter()
                 .find(|p| p.name == dependency.name && p.source.is_none());
 
+            if let Some(dependency_package) = &dependency_package {
+                // Dependency is a member of the current workspace, no need to
+                // recursively call `cargo metadata` on it.
+                if metadata.workspace_members.contains(&dependency_package.id) {
+                    continue;
+                }
+            }
+
             let manifest_path = match dependency_package {
                 Some(p) => PathBuf::from(&p.manifest_path),
                 None => {
