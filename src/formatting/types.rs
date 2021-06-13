@@ -952,6 +952,24 @@ fn join_bounds_inner(
         ast::GenericBound::Trait(..) => last_line_extendable(s),
     };
 
+    // Whether a PathSegment segment includes internal array containing more than one item
+    let is_segment_with_multi_items_array = |seg: &ast::PathSegment| {
+        if let Some(args_in) = &seg.args {
+            match &**args_in {
+                ast::AngleBracketed(args) => {
+                    if args.args.len() > 1 {
+                        true
+                    } else {
+                        false
+                    }
+                }
+                _ => false,
+            }
+        } else {
+            false
+        }
+    };
+
     let result = items.iter().enumerate().try_fold(
         (String::new(), None, false),
         |(strs, prev_trailing_span, prev_extendable), (i, item)| {
@@ -1046,10 +1064,33 @@ fn join_bounds_inner(
         },
     )?;
 
-    if !force_newline
-        && items.len() > 1
-        && (result.0.contains('\n') || result.0.len() > shape.width)
-    {
+    // Whether retry the function with forced newline is needed:
+    //   Only if result is not already multiline and did not exceed line width,
+    //   and either there is more than one item;
+    //       or the single item is of type `Trait`,
+    //          and any of the internal arrays contains more than one item;
+    let retry_with_force_newline =
+        if force_newline || (!result.0.contains('\n') && result.0.len() <= shape.width) {
+            false
+        } else {
+            if items.len() > 1 {
+                true
+            } else {
+                match items[0] {
+                    ast::GenericBound::Trait(ref poly_trait_ref, ..) => {
+                        let segments = &poly_trait_ref.trait_ref.path.segments;
+                        if segments.len() > 1 {
+                            true
+                        } else {
+                            is_segment_with_multi_items_array(&segments[0])
+                        }
+                    }
+                    _ => false,
+                }
+            }
+        };
+
+    if retry_with_force_newline {
         join_bounds_inner(context, shape, items, need_indent, true)
     } else {
         Some(result.0)
