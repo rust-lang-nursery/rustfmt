@@ -13,6 +13,7 @@ impl Emitter for ModifiedLinesEmitter {
             formatted_text,
             ..
         }: FormattedFile<'_>,
+        _newline_style: NewlineStyle,
     ) -> Result<EmitterResult, EmitterError> {
         const CONTEXT_SIZE: usize = 0;
         let mismatch = make_diff(original_text, formatted_text, CONTEXT_SIZE);

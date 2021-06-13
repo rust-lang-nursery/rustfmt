@@ -25,6 +25,7 @@ impl Emitter for StdoutEmitter {
             formatted_text,
             ..
         }: FormattedFile<'_>,
+        _newline_style: NewlineStyle,
     ) -> Result<EmitterResult, EmitterError> {
         if self.verbosity != Verbosity::Quiet {
             writeln!(output, "{}:\n", filename)?;

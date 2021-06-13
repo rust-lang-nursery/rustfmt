@@ -1,5 +1,10 @@
 use crate::NewlineStyle;
 
+const LINE_FEED: char = '\n';
+const CARRIAGE_RETURN: char = '\r';
+const WINDOWS_NEWLINE: &str = "\r\n";
+const UNIX_NEWLINE: &str = "\n";
+
 /// Apply this newline style to the formatted text. When the style is set
 /// to `Auto`, the `raw_input_text` is used to detect the existing line
 /// endings.
@@ -14,6 +19,22 @@ pub(crate) fn apply_newline_style(
     *formatted_text = match effective_newline_style(newline_style, raw_input_text) {
         EffectiveNewlineStyle::Windows => convert_to_windows_newlines(formatted_text),
         EffectiveNewlineStyle::Unix => convert_to_unix_newlines(formatted_text),
+    }
+}
+
+/// Get the newline string based on the requested style and the original text
+pub(crate) fn get_newline_string(newline_style: NewlineStyle, raw_input_text: &str) -> String {
+    match effective_newline_style(newline_style, raw_input_text) {
+        EffectiveNewlineStyle::Windows => WINDOWS_NEWLINE.to_string(),
+        _ => UNIX_NEWLINE.to_string(),
+    }
+}
+
+/// Get the newline string based on input original text
+pub(crate) fn get_newline_string_of_text(raw_input_text: &str) -> String {
+    match auto_detect_newline_style(raw_input_text) {
+        EffectiveNewlineStyle::Windows => WINDOWS_NEWLINE.to_string(),
+        _ => UNIX_NEWLINE.to_string(),
     }
 }
 
@@ -34,11 +55,6 @@ fn effective_newline_style(
         NewlineStyle::Unix => EffectiveNewlineStyle::Unix,
     }
 }
-
-const LINE_FEED: char = '\n';
-const CARRIAGE_RETURN: char = '\r';
-const WINDOWS_NEWLINE: &str = "\r\n";
-const UNIX_NEWLINE: &str = "\n";
 
 fn auto_detect_newline_style(raw_input_text: &str) -> EffectiveNewlineStyle {
     let first_line_feed_pos = raw_input_text.chars().position(|ch| ch == LINE_FEED);

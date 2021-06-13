@@ -24,6 +24,7 @@ impl Emitter for FilesEmitter {
             original_text,
             formatted_text,
         }: FormattedFile<'_>,
+        _newline_style: NewlineStyle,
     ) -> Result<EmitterResult, EmitterError> {
         // Write text directly over original file if there is a diff.
         let filename = match filename {

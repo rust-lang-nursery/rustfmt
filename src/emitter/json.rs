@@ -5,6 +5,10 @@ use rustfmt_diff::{make_diff, DiffLine, Mismatch};
 use serde::Serialize;
 use serde_json::to_string as to_json_string;
 
+use crate::formatting::newline_style::{
+    apply_newline_style, get_newline_string, get_newline_string_of_text,
+};
+
 #[derive(Debug, Default)]
 pub struct JsonEmitter {
     mismatched_files: Vec<MismatchedFile>,
@@ -40,13 +44,17 @@ impl Emitter for JsonEmitter {
             original_text,
             formatted_text,
         }: FormattedFile<'_>,
+        newline_style: NewlineStyle,
     ) -> Result<EmitterResult, EmitterError> {
         const CONTEXT_SIZE: usize = 0;
         let diff = make_diff(original_text, formatted_text, CONTEXT_SIZE);
         let has_diff = !diff.is_empty();
 
+        let mut formatted_text_string = String::from(formatted_text);
+        apply_newline_style(newline_style, &mut formatted_text_string, &original_text);
+
         if has_diff {
-            self.add_misformatted_file(filename, diff)?;
+            self.add_misformatted_file(filename, diff, newline_style, &original_text)?;
         }
 
         Ok(EmitterResult { has_diff })
@@ -58,8 +66,13 @@ impl JsonEmitter {
         &mut self,
         filename: &FileName,
         diff: Vec<Mismatch>,
+        newline_style: NewlineStyle,
+        raw_input_text: &str,
     ) -> Result<(), EmitterError> {
         let mut mismatches = vec![];
+        let expected_newline = get_newline_string(newline_style, raw_input_text);
+        let origin_newline = get_newline_string_of_text(raw_input_text);
+
         for mismatch in diff {
             let original_begin_line = mismatch.line_number_orig;
             let expected_begin_line = mismatch.line_number;
@@ -76,13 +89,13 @@ impl JsonEmitter {
                         expected_end_line = expected_begin_line + expected_line_counter;
                         expected_line_counter += 1;
                         expected.push_str(&msg);
-                        expected.push('\n');
+                        expected.push_str(&expected_newline);
                     }
                     DiffLine::Resulting(msg) => {
                         original_end_line = original_begin_line + original_line_counter;
                         original_line_counter += 1;
                         original.push_str(&msg);
-                        original.push('\n');
+                        original.push_str(&origin_newline);
                     }
                     DiffLine::Context(_) => continue,
                 }
@@ -141,7 +154,12 @@ mod tests {
         };
 
         emitter
-            .add_misformatted_file(&FileName::Real(PathBuf::from(file)), vec![mismatch])
+            .add_misformatted_file(
+                &FileName::Real(PathBuf::from(file)),
+                vec![mismatch],
+                NewlineStyle::default(),
+                &mismatched_file.mismatches[0].original,
+            )
             .unwrap();
 
         assert_eq!(emitter.mismatched_files.len(), 1);
@@ -186,7 +204,12 @@ mod tests {
         };
 
         emitter
-            .add_misformatted_file(&FileName::Real(PathBuf::from(file)), vec![mismatch])
+            .add_misformatted_file(
+                &FileName::Real(PathBuf::from(file)),
+                vec![mismatch],
+                NewlineStyle::default(),
+                &mismatched_file.mismatches[0].original,
+            )
             .unwrap();
 
         assert_eq!(emitter.mismatched_files.len(), 1);
@@ -206,6 +229,7 @@ mod tests {
                     original_text: "fn empty() {}\n",
                     formatted_text: "fn empty() {}\n",
                 },
+                NewlineStyle::default(),
             )
             .unwrap();
         let _ = emitter.emit_footer(&mut writer);
@@ -253,6 +277,7 @@ mod tests {
                     original_text: &original.join("\n"),
                     formatted_text: &formatted.join("\n"),
                 },
+                NewlineStyle::default(),
             )
             .unwrap();
         let _ = emitter.emit_footer(&mut writer);
@@ -305,6 +330,7 @@ mod tests {
                     original_text: &bin_original.join("\n"),
                     formatted_text: &bin_formatted.join("\n"),
                 },
+                NewlineStyle::default(),
             )
             .unwrap();
         let _ = emitter
@@ -315,6 +341,7 @@ mod tests {
                     original_text: &lib_original.join("\n"),
                     formatted_text: &lib_formatted.join("\n"),
                 },
+                NewlineStyle::default(),
             )
             .unwrap();
         let _ = emitter.emit_footer(&mut writer);
@@ -343,6 +370,171 @@ mod tests {
         };
 
         let exp_json = to_json_string(&vec![exp_bin, exp_lib]).unwrap();
+        assert_eq!(&writer[..], format!("{}\n", exp_json).as_bytes());
+    }
+
+    #[test]
+    fn emits_empty_array_on_no_diffs_newline_windows_to_windows() {
+        let mut writer = Vec::new();
+        let mut emitter = JsonEmitter::default();
+        let _ = emitter.emit_header(&mut writer);
+        let result = emitter
+            .emit_formatted_file(
+                &mut writer,
+                FormattedFile {
+                    filename: &FileName::Real(PathBuf::from("src/lib.rs")),
+                    original_text: "fn main() {\r\n    x = y;\r\n}\r\n",
+                    formatted_text: "fn main() {\r\n    x = y;\r\n}\r\n",
+                },
+                NewlineStyle::Windows,
+            )
+            .unwrap();
+        let _ = emitter.emit_footer(&mut writer);
+        assert_eq!(result.has_diff, false);
+        assert_eq!(&writer[..], b"[]\n");
+    }
+
+    #[test]
+    fn emits_empty_array_on_no_diffs_newline_unix_to_windows() {
+        let mut writer = Vec::new();
+        let mut emitter = JsonEmitter::default();
+        let _ = emitter.emit_header(&mut writer);
+        let result = emitter
+            .emit_formatted_file(
+                &mut writer,
+                FormattedFile {
+                    filename: &FileName::Real(PathBuf::from("src/lib.rs")),
+                    original_text: "fn main() {\n    x = y;\n}\n",
+                    formatted_text: "fn main() {\r\n    x = y;\r\n}\r\n",
+                },
+                NewlineStyle::Windows,
+            )
+            .unwrap();
+        let _ = emitter.emit_footer(&mut writer);
+        assert_eq!(result.has_diff, false);
+        assert_eq!(&writer[..], b"[]\n");
+    }
+
+    #[test]
+    fn emits_empty_array_on_no_diffs_newline_windows_to_unix() {
+        let mut writer = Vec::new();
+        let mut emitter = JsonEmitter::default();
+        let _ = emitter.emit_header(&mut writer);
+        let result = emitter
+            .emit_formatted_file(
+                &mut writer,
+                FormattedFile {
+                    filename: &FileName::Real(PathBuf::from("src/lib.rs")),
+                    original_text: "fn main() {\r\n    x = y;\r\n}\r\n",
+                    formatted_text: "fn main() {\n    x = y;\n}\n",
+                },
+                NewlineStyle::Unix,
+            )
+            .unwrap();
+        let _ = emitter.emit_footer(&mut writer);
+        assert_eq!(result.has_diff, false);
+        assert_eq!(&writer[..], b"[]\n");
+    }
+
+    #[test]
+    fn emits_array_with_with_diffs_newline_windows_to_windows() {
+        let file_name = "src/bin.rs";
+        let mut writer = Vec::new();
+        let mut emitter = JsonEmitter::default();
+        let _ = emitter.emit_header(&mut writer);
+        let result = emitter
+            .emit_formatted_file(
+                &mut writer,
+                FormattedFile {
+                    filename: &FileName::Real(PathBuf::from(file_name)),
+                    original_text: "fn main() {\r\nx = y;\r\n}\r\n",
+                    formatted_text: "fn main() {\r\n    x = y;\r\n}\r\n",
+                },
+                NewlineStyle::Windows,
+            )
+            .unwrap();
+        let _ = emitter.emit_footer(&mut writer);
+        let exp_json = to_json_string(&vec![MismatchedFile {
+            name: String::from(file_name),
+            mismatches: vec![MismatchedBlock {
+                original_begin_line: 2,
+                original_end_line: 2,
+                expected_begin_line: 2,
+                expected_end_line: 2,
+                original: String::from("x = y;\r\n"),
+                expected: String::from("    x = y;\r\n"),
+            }],
+        }])
+        .unwrap();
+        assert_eq!(result.has_diff, true);
+        assert_eq!(&writer[..], format!("{}\n", exp_json).as_bytes());
+    }
+
+    #[test]
+    fn emits_array_with_with_diffs_newline_unix_to_windows() {
+        let file_name = "src/bin.rs";
+        let mut writer = Vec::new();
+        let mut emitter = JsonEmitter::default();
+        let _ = emitter.emit_header(&mut writer);
+        let result = emitter
+            .emit_formatted_file(
+                &mut writer,
+                FormattedFile {
+                    filename: &FileName::Real(PathBuf::from(file_name)),
+                    original_text: "fn main() {\nx = y;\n}\n",
+                    formatted_text: "fn main() {\r\n    x = y;\r\n}\r\n",
+                },
+                NewlineStyle::Windows,
+            )
+            .unwrap();
+        let _ = emitter.emit_footer(&mut writer);
+        let exp_json = to_json_string(&vec![MismatchedFile {
+            name: String::from(file_name),
+            mismatches: vec![MismatchedBlock {
+                original_begin_line: 2,
+                original_end_line: 2,
+                expected_begin_line: 2,
+                expected_end_line: 2,
+                original: String::from("x = y;\n"),
+                expected: String::from("    x = y;\r\n"),
+            }],
+        }])
+        .unwrap();
+        assert_eq!(result.has_diff, true);
+        assert_eq!(&writer[..], format!("{}\n", exp_json).as_bytes());
+    }
+
+    #[test]
+    fn emits_array_with_with_diffs_newline_windows_to_unix() {
+        let file_name = "src/bin.rs";
+        let mut writer = Vec::new();
+        let mut emitter = JsonEmitter::default();
+        let _ = emitter.emit_header(&mut writer);
+        let result = emitter
+            .emit_formatted_file(
+                &mut writer,
+                FormattedFile {
+                    filename: &FileName::Real(PathBuf::from(file_name)),
+                    original_text: "fn main() {\r\nx = y;\r\n}\r\n",
+                    formatted_text: "fn main() {\n    x = y;\n}\n",
+                },
+                NewlineStyle::Unix,
+            )
+            .unwrap();
+        let _ = emitter.emit_footer(&mut writer);
+        let exp_json = to_json_string(&vec![MismatchedFile {
+            name: String::from(file_name),
+            mismatches: vec![MismatchedBlock {
+                original_begin_line: 2,
+                original_end_line: 2,
+                expected_begin_line: 2,
+                expected_end_line: 2,
+                original: String::from("x = y;\r\n"),
+                expected: String::from("    x = y;\n"),
+            }],
+        }])
+        .unwrap();
+        assert_eq!(result.has_diff, true);
         assert_eq!(&writer[..], format!("{}\n", exp_json).as_bytes());
     }
 }

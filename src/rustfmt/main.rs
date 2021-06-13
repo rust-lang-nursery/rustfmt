@@ -2,6 +2,9 @@
 #[macro_use]
 extern crate lazy_static;
 
+#[macro_use]
+extern crate log;
+
 use std::collections::HashMap;
 use std::env;
 use std::fmt;
@@ -12,6 +15,8 @@ use std::str::FromStr;
 use anyhow::{format_err, Result};
 use structopt::StructOpt;
 use thiserror::Error;
+
+use rustfmt_nightly::NewlineStyle;
 
 use rustfmt_nightly::{
     emitter::{emit_format_report, EmitMode, EmitterConfig, Verbosity},
@@ -167,7 +172,11 @@ impl Opt {
         }
     }
 
-    fn emitter_config(&self, default_emit_mode: EmitMode) -> EmitterConfig {
+    fn emitter_config(
+        &self,
+        default_emit_mode: EmitMode,
+        newline_style: NewlineStyle,
+    ) -> EmitterConfig {
         let emit_mode = if self.check {
             EmitMode::Diff
         } else {
@@ -177,6 +186,7 @@ impl Opt {
             emit_mode,
             verbosity: self.verbosity(),
             print_filename: self.files_with_diff,
+            newline_style: newline_style,
             ..EmitterConfig::default()
         }
     }
@@ -456,7 +466,11 @@ fn format_string(input: String, opt: Opt) -> Result<i32> {
         }
     }
 
-    let has_diff = emit_format_report(report, out, opt.emitter_config(EmitMode::Stdout))?;
+    let has_diff = emit_format_report(
+        report,
+        out,
+        opt.emitter_config(EmitMode::Stdout, config.newline_style()),
+    )?;
     Ok(if opt.check && has_diff { 1 } else { 0 })
 }
 
@@ -592,7 +606,7 @@ fn format(opt: Opt) -> Result<i32> {
     let has_diff = emit_format_report(
         format_report,
         &mut stdout(),
-        opt.emitter_config(EmitMode::Files),
+        opt.emitter_config(EmitMode::Files, default_config.newline_style()),
     )?;
 
     Ok(if opt.check && has_diff { 1 } else { 0 })

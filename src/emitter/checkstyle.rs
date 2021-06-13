@@ -28,6 +28,7 @@ impl Emitter for CheckstyleEmitter {
             original_text,
             formatted_text,
         }: FormattedFile<'_>,
+        _newline_style: NewlineStyle,
     ) -> Result<EmitterResult, EmitterError> {
         const CONTEXT_SIZE: usize = 0;
         let diff = make_diff(original_text, formatted_text, CONTEXT_SIZE);
@@ -107,6 +108,7 @@ mod tests {
                     original_text: &bin_original.join("\n"),
                     formatted_text: &bin_formatted.join("\n"),
                 },
+                NewlineStyle::default(),
             )
             .unwrap();
         let _ = emitter
@@ -117,6 +119,7 @@ mod tests {
                     original_text: &lib_original.join("\n"),
                     formatted_text: &lib_formatted.join("\n"),
                 },
+                NewlineStyle::default(),
             )
             .unwrap();
         let _ = emitter.emit_footer(&mut writer);

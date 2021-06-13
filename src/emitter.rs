@@ -9,7 +9,7 @@ use std::io::{self, Write};
 
 use thiserror::Error;
 
-use crate::{config::FileName, FormatReport, FormatResult};
+use crate::{config::options::NewlineStyle, config::FileName, FormatReport, FormatResult};
 
 pub mod checkstyle;
 pub mod diff;
@@ -45,6 +45,7 @@ pub trait Emitter {
         &mut self,
         output: &mut dyn Write,
         formatted_file: FormattedFile<'_>,
+        newline_style: NewlineStyle,
     ) -> Result<EmitterResult, EmitterError>;
 
     fn emit_header(&self, _output: &mut dyn Write) -> Result<(), EmitterError> {
@@ -136,6 +137,7 @@ pub struct EmitterConfig {
     pub color: Color,
     pub verbosity: Verbosity,
     pub print_filename: bool,
+    pub newline_style: NewlineStyle,
 }
 
 impl Default for EmitterConfig {
@@ -145,6 +147,7 @@ impl Default for EmitterConfig {
             color: Color::Auto,
             verbosity: Verbosity::Normal,
             print_filename: false,
+            newline_style: NewlineStyle::default(),
         }
     }
 }
@@ -162,7 +165,14 @@ where
 
     emitter.emit_header(out)?;
     for (filename, format_result) in format_report.format_result_as_rc().borrow().iter() {
-        has_diff |= write_file(filename, &format_result, out, &mut *emitter)?.has_diff;
+        has_diff |= write_file(
+            filename,
+            &format_result,
+            out,
+            &mut *emitter,
+            config.newline_style,
+        )?
+        .has_diff;
     }
     emitter.emit_footer(out)?;
 
@@ -174,6 +184,7 @@ pub(crate) fn write_file<T>(
     formatted_result: &FormatResult,
     out: &mut T,
     emitter: &mut dyn Emitter,
+    newline_style: NewlineStyle,
 ) -> Result<EmitterResult, EmitterError>
 where
     T: Write,
@@ -183,8 +194,7 @@ where
         original_text: formatted_result.original_text(),
         formatted_text: formatted_result.formatted_text(),
     };
-
-    emitter.emit_formatted_file(out, formatted_file)
+    emitter.emit_formatted_file(out, formatted_file, newline_style)
 }
 
 fn create_emitter(emitter_config: EmitterConfig) -> Box<dyn Emitter> {

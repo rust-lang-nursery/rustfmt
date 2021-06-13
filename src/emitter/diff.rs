@@ -34,6 +34,7 @@ impl Emitter for DiffEmitter {
             original_text,
             formatted_text,
         }: FormattedFile<'_>,
+        _newline_style: NewlineStyle,
     ) -> Result<EmitterResult, EmitterError> {
         const CONTEXT_SIZE: usize = 3;
         let mismatch = make_diff(&original_text, formatted_text, CONTEXT_SIZE);
@@ -80,6 +81,7 @@ mod tests {
                     original_text: "fn empty() {}\n",
                     formatted_text: "fn empty() {}\n",
                 },
+                NewlineStyle::default(),
             )
             .unwrap();
         assert_eq!(result.has_diff, false);
@@ -108,6 +110,7 @@ mod tests {
                     original_text: bin_original,
                     formatted_text: bin_formatted,
                 },
+                NewlineStyle::default(),
             )
             .unwrap();
         let _ = emitter
@@ -118,6 +121,7 @@ mod tests {
                     original_text: lib_original,
                     formatted_text: lib_formatted,
                 },
+                NewlineStyle::default(),
             )
             .unwrap();
 
@@ -139,6 +143,7 @@ mod tests {
                     original_text: "fn empty() {}\n",
                     formatted_text: "fn empty() {}\r\n",
                 },
+                NewlineStyle::default(),
             )
             .unwrap();
         assert_eq!(

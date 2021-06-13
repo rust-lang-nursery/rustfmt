@@ -39,7 +39,7 @@ mod macros;
 mod matches;
 mod missed_spans;
 pub(crate) mod modules;
-mod newline_style;
+pub(crate) mod newline_style;
 mod overflow;
 mod pairs;
 mod patterns;
