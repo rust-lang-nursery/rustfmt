@@ -7,8 +7,7 @@ fn foo() {
         // Some comment.
         a => foo(),
         b if 0 < 42 => foo(),
-        c => {
-            // Another comment.
+        c => { // Another comment.
             // Comment.
             an_expression;
             foo()

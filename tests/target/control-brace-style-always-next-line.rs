@@ -23,8 +23,7 @@ fn main() {
 
 
     'while_label: while cond
-    {
-        // while comment
+    { // while comment
         let foo = ();
     }
 

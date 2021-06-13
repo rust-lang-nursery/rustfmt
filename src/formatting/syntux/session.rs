@@ -1,4 +1,5 @@
 use std::cell::RefCell;
+use std::ops::Range;
 use std::path::Path;
 use std::rc::Rc;
 
@@ -180,6 +181,15 @@ impl ParseSess {
                 .get_line(fl.lines[0].line_index)
                 .map_or_else(String::new, |s| s.to_string()),
             None => String::new(),
+        }
+    }
+
+    pub(crate) fn line_bounds(&self, pos: BytePos) -> Option<Range<BytePos>> {
+        let line = self.parse_sess.source_map().lookup_line(pos).ok();
+
+        match line {
+            Some(line_info) => Some(line_info.sf.line_bounds(line_info.line)),
+            None => None,
         }
     }
 

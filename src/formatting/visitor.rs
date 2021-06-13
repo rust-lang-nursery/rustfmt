@@ -7,7 +7,7 @@ use rustc_span::{symbol, BytePos, Pos, Span, DUMMY_SP};
 use crate::config::{BraceStyle, Config};
 use crate::formatting::{
     attr::*,
-    comment::{contains_comment, rewrite_comment, CodeCharKind, CommentCodeSlices},
+    comment::{comment_style, contains_comment, rewrite_comment, CodeCharKind, CommentCodeSlices},
     items::{
         format_impl, format_trait, format_trait_alias, is_mod_decl, is_use_item,
         rewrite_associated_impl_type, rewrite_extern_crate, rewrite_opaque_impl_type,
@@ -262,6 +262,36 @@ impl<'b, 'a: 'b> FmtVisitor<'a> {
         self.last_pos = self.last_pos + brace_compensation;
         self.block_indent = self.block_indent.block_indent(self.config);
         self.push_str("{");
+
+        if has_braces {
+            let block_line_range = self.parse_sess.lookup_line_range(b.span);
+            if block_line_range.lo != block_line_range.hi { // Skipping if a single line block
+                let first_line_contains_stmt = if let Some(first_stmt) = b.stmts.first() {
+                    self.parse_sess.lookup_line_range(first_stmt.span).lo == block_line_range.lo
+                } else {
+                    false
+                };
+
+                let first_line_bounds = self.parse_sess.line_bounds(self.last_pos).unwrap();
+                let first_line_snip = self
+                    .snippet(mk_sp(self.last_pos, first_line_bounds.end))
+                    .trim();
+
+                if !first_line_contains_stmt
+                    && contains_comment(first_line_snip)
+                    && comment_style(first_line_snip, self.config.normalize_comments())
+                        .is_line_comment()
+                {
+                    if let Some(comment) =
+                        rewrite_comment(first_line_snip, false, self.shape(), self.config)
+                    {
+                        self.push_str(" ");
+                        self.push_str(&comment);
+                        self.last_pos = self.last_pos + BytePos(first_line_snip.len() as u32);
+                    }
+                }
+            }
+        }
 
         let first_non_ws = inner_attrs
             .and_then(|attrs| attrs.first().map(|attr| attr.span.lo()))
