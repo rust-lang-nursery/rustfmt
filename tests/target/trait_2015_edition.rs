@@ -89,11 +89,13 @@ trait Y // comment
 
 // #2055
 pub trait Foo:
-// A and C
-A + C
-// and B
+    // A and C
+    A
+    + C
+    // and B
     + B
-{}
+{
+}
 
 // #2158
 trait Foo {

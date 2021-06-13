@@ -1356,6 +1356,9 @@ impl MacroBranch {
             result += " =>";
         }
 
+        // Note (from issue #4759): comments between the end of `whole_body` and
+        // the end of `span` are currently ignored.
+
         if !context.config.format_macro_bodies() {
             result += " ";
             result += context.snippet(self.whole_body);

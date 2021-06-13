@@ -1933,12 +1933,13 @@ pub(crate) fn rewrite_assign_rhs<S: Into<String>, R: Rewrite>(
     rewrite_assign_rhs_with(context, lhs, ex, shape, RhsTactics::Default)
 }
 
-pub(crate) fn rewrite_assign_rhs_expr<R: Rewrite>(
+pub(crate) fn rewrite_rhs_expr<R: Rewrite>(
     context: &RewriteContext<'_>,
     lhs: &str,
     ex: &R,
     shape: Shape,
     rhs_tactics: RhsTactics,
+    lhs_separator: &str,
 ) -> Option<String> {
     let last_line_width = last_line_width(&lhs).saturating_sub(if lhs.contains('\n') {
         shape.indent.width()
@@ -1951,7 +1952,7 @@ pub(crate) fn rewrite_assign_rhs_expr<R: Rewrite>(
         offset: shape.offset + last_line_width + 1,
         ..shape
     });
-    let has_rhs_comment = if let Some(offset) = lhs.find_last_uncommented("=") {
+    let has_rhs_comment = if let Some(offset) = lhs.find_last_uncommented(lhs_separator) {
         lhs.trim_end().len() > offset + 1
     } else {
         false
@@ -1965,6 +1966,16 @@ pub(crate) fn rewrite_assign_rhs_expr<R: Rewrite>(
         rhs_tactics,
         has_rhs_comment,
     )
+}
+
+fn rewrite_assign_rhs_expr<R: Rewrite>(
+    context: &RewriteContext<'_>,
+    lhs: &str,
+    ex: &R,
+    shape: Shape,
+    rhs_tactics: RhsTactics,
+) -> Option<String> {
+    rewrite_rhs_expr(context, &lhs, ex, shape, rhs_tactics, "=")
 }
 
 pub(crate) fn rewrite_assign_rhs_with<S: Into<String>, R: Rewrite>(
