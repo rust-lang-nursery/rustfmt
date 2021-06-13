@@ -569,7 +569,7 @@ where
                 formatted_comment = rewrite_post_comment(&mut item_max_width)?;
             }
 
-            if !starts_with_newline(comment) {
+            if !starts_with_newline(comment) || !separate {
                 if formatting.align_comments {
                     let mut comment_alignment = post_comment_alignment(
                         item_max_width,
