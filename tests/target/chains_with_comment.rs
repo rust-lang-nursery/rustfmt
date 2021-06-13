@@ -135,3 +135,14 @@ fn foo() {
         // comment
         .baz;
 }
+
+// #4012
+pub fn foo2() {
+    let a = chain
+        .get()
+        /*
+
+
+        */
+        .set();
+}

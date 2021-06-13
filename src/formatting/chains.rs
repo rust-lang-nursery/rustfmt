@@ -859,9 +859,18 @@ fn trim_tries(s: &str) -> String {
     for (kind, rich_char) in CharClasses::new(s.chars()) {
         match rich_char.get_char() {
             '\n' => {
-                if result.is_empty() || !line_buffer.trim().is_empty() {
-                    result.push_str(&line_buffer);
-                    result.push('\n')
+                let last_new_line = result.rfind('\n').unwrap_or(0);
+                match result[..last_new_line].rfind('\n') {
+                    // Remove the current line if it's blank and follows a line-style comment
+                    Some(second_last_newline)
+                        if result[second_last_newline + 1..]
+                            .trim_start()
+                            .starts_with("//")
+                            && line_buffer.trim().is_empty() => {}
+                    _ => {
+                        result.push_str(&line_buffer);
+                        result.push('\n');
+                    }
                 }
                 line_buffer.clear();
             }
