@@ -416,6 +416,7 @@ fn identify_comment(
 
 /// Attributes for code blocks in rustdoc.
 /// See https://doc.rust-lang.org/rustdoc/print.html#attributes
+#[derive(Debug)]
 enum CodeBlockAttribute {
     Rust,
     Ignore,
@@ -426,16 +427,21 @@ enum CodeBlockAttribute {
 }
 
 impl CodeBlockAttribute {
-    fn new(attribute: &str) -> CodeBlockAttribute {
-        match attribute {
-            "rust" | "" => CodeBlockAttribute::Rust,
-            "ignore" => CodeBlockAttribute::Ignore,
-            "text" => CodeBlockAttribute::Text,
-            "should_panic" => CodeBlockAttribute::ShouldPanic,
-            "no_run" => CodeBlockAttribute::NoRun,
-            "compile_fail" => CodeBlockAttribute::CompileFail,
-            _ => CodeBlockAttribute::Text,
+    fn new(attributes: &str) -> Vec<CodeBlockAttribute> {
+        let mut result: Vec<CodeBlockAttribute> = vec![];
+        let attrs_iter = attributes.split(',');
+        for cba in attrs_iter {
+            result.push(match cba.trim() {
+                "rust" | "" => CodeBlockAttribute::Rust,
+                "ignore" => CodeBlockAttribute::Ignore,
+                "text" => CodeBlockAttribute::Text,
+                "should_panic" => CodeBlockAttribute::ShouldPanic,
+                "no_run" => CodeBlockAttribute::NoRun,
+                "compile_fail" => CodeBlockAttribute::CompileFail,
+                _ => CodeBlockAttribute::Text,
+            })
         }
+        return result;
     }
 }
 
@@ -517,7 +523,7 @@ struct CommentRewrite<'a> {
     result: String,
     code_block_buffer: String,
     is_prev_line_multi_line: bool,
-    code_block_attr: Option<CodeBlockAttribute>,
+    code_block_attr: Option<Vec<CodeBlockAttribute>>,
     item_block: Option<ItemizedBlock>,
     comment_line_separator: String,
     indent_str: String,
@@ -678,25 +684,28 @@ impl<'a> CommentRewrite<'a> {
             };
         } else if self.code_block_attr.is_some() {
             if line.starts_with("```") {
-                let code_block = match self.code_block_attr.as_ref().unwrap() {
-                    CodeBlockAttribute::Ignore | CodeBlockAttribute::Text => {
-                        trim_custom_comment_prefix(&self.code_block_buffer)
-                    }
-                    _ if self.code_block_buffer.is_empty() => String::new(),
-                    _ => {
-                        let mut config = self.fmt.config.clone();
-                        config.set().wrap_comments(false);
-                        if config.format_code_in_doc_comments() {
-                            if let Some(s) =
-                                format_code_block(&self.code_block_buffer, &config, false)
-                            {
-                                trim_custom_comment_prefix(s.as_ref())
-                            } else {
-                                trim_custom_comment_prefix(&self.code_block_buffer)
-                            }
+                let code_block_attr_inner = self.code_block_attr.as_ref().unwrap();
+                let code_block = if code_block_attr_inner.iter().any(|cba| match cba {
+                    CodeBlockAttribute::Ignore
+                    | CodeBlockAttribute::CompileFail
+                    | CodeBlockAttribute::Text => true,
+                    _ => false,
+                }) {
+                    trim_custom_comment_prefix(&self.code_block_buffer)
+                } else if code_block_attr_inner.is_empty() {
+                    String::new()
+                } else {
+                    let mut config = self.fmt.config.clone();
+                    config.set().wrap_comments(false);
+                    if config.format_code_in_doc_comments() {
+                        if let Some(s) = format_code_block(&self.code_block_buffer, &config, false)
+                        {
+                            trim_custom_comment_prefix(s.as_ref())
                         } else {
                             trim_custom_comment_prefix(&self.code_block_buffer)
                         }
+                    } else {
+                        trim_custom_comment_prefix(&self.code_block_buffer)
                     }
                 };
                 if !code_block.is_empty() {
