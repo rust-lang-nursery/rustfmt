@@ -15,7 +15,7 @@ use crate::formatting::{
     rewrite::{Rewrite, RewriteContext},
     shape::Shape,
     source_map::SpanUtils,
-    utils::{last_line_width, left_most_sub_expr, stmt_expr, NodeIdExt},
+    utils::{last_line_width, left_most_sub_expr, stmt_expr, NodeIdExt, StmtsExt},
 };
 
 // This module is pretty messy because of the rules around closures and blocks:
@@ -140,7 +140,7 @@ fn get_inner_expr<'a>(
         if !needs_block(block, prefix, context) {
             // block.stmts.len() == 1 except with `|| {{}}`;
             // https://github.com/rust-lang/rustfmt/issues/3844
-            if let Some(expr) = block.stmts.first().and_then(stmt_expr) {
+            if let Some(expr) = block.stmts.find_non_empty().and_then(stmt_expr) {
                 return get_inner_expr(expr, prefix, context);
             }
         }
@@ -151,12 +151,18 @@ fn get_inner_expr<'a>(
 
 // Figure out if a block is necessary.
 fn needs_block(block: &ast::Block, prefix: &str, context: &RewriteContext<'_>) -> bool {
-    let has_attributes = block.stmts.first().map_or(false, |first_stmt| {
+    let has_attributes = block.stmts.find_non_empty().map_or(false, |first_stmt| {
         !get_attrs_from_stmt(first_stmt).is_empty()
     });
 
+    let mut non_empty_stmts = block
+        .stmts
+        .iter()
+        .filter(|stmt| !matches!(stmt.kind, ast::StmtKind::Empty));
+    non_empty_stmts.next();
+
     is_unsafe_block(block)
-        || block.stmts.len() > 1
+        || non_empty_stmts.next().is_some()
         || has_attributes
         || block_contains_comment(context, block)
         || prefix.contains('\n')
@@ -390,7 +396,7 @@ pub(crate) fn rewrite_last_closure(
                     && !context.inside_macro()
                     && is_simple_block(context, block, Some(&body.attrs)) =>
             {
-                stmt_expr(&block.stmts[0]).unwrap_or(body)
+                stmt_expr(block.stmts.find_non_empty().unwrap()).unwrap_or(body)
             }
             _ => body,
         };

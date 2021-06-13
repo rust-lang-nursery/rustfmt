@@ -837,6 +837,17 @@ pub(crate) fn format_code_block(
     })
 }
 
+pub(crate) trait StmtsExt {
+    fn find_non_empty(&self) -> Option<&ast::Stmt>;
+}
+
+impl StmtsExt for Vec<ast::Stmt> {
+    fn find_non_empty(&self) -> Option<&ast::Stmt> {
+        self.iter()
+            .find(|stmt| !matches!(stmt.kind, ast::StmtKind::Empty))
+    }
+}
+
 #[cfg(test)]
 mod test {
     use super::*;

@@ -469,7 +469,7 @@ impl<'a> FmtVisitor<'a> {
             return None;
         }
 
-        let res = Stmt::from_ast_node(block.stmts.first()?, true)
+        let res = Stmt::from_ast_node(block.stmts.find_non_empty()?, true)
             .rewrite(&self.get_context(), self.shape())?;
 
         let width = self.block_indent.width() + fn_str.len() + res.len() + 5;

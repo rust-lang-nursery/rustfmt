@@ -20,6 +20,7 @@ use crate::formatting::{
     utils::{
         contains_skip, extra_offset, first_line_width, inner_attributes, last_line_extendable,
         mk_sp, mk_sp_lo_plus_one, semicolon_for_expr, trimmed_last_line_width, unicode_str_width,
+        StmtsExt,
     },
 };
 
@@ -312,7 +313,7 @@ fn block_can_be_flattened<'a>(
                 && is_simple_block(context, block, Some(&expr.attrs))
                 // Don't flatten a block containing a macro invocation,
                 // since it may expand to a statement
-                && !stmt_is_expr_mac(&block.stmts[0]) =>
+                && !stmt_is_expr_mac(block.stmts.find_non_empty().unwrap()) =>
         {
             Some(&*block)
         }
@@ -332,7 +333,7 @@ fn flatten_arm_body<'a>(
         |expr| !context.config.force_multiline_blocks() && can_flatten_block_around_this(expr);
 
     if let Some(ref block) = block_can_be_flattened(context, body) {
-        if let ast::StmtKind::Expr(ref expr) = block.stmts[0].kind {
+        if let ast::StmtKind::Expr(ref expr) = block.stmts.find_non_empty().unwrap().kind {
             if let ast::ExprKind::Block(..) = expr.kind {
                 if expr.attrs.is_empty() {
                     flatten_arm_body(context, expr, None)

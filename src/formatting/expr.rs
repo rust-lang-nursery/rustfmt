@@ -31,7 +31,7 @@ use crate::formatting::{
     utils::{
         colon_spaces, contains_skip, count_newlines, first_line_ends_with, inner_attributes,
         last_line_extendable, last_line_width, mk_sp, outer_attributes, semicolon_for_expr,
-        unicode_str_width, wrap_str,
+        unicode_str_width, wrap_str, StmtsExt,
     },
     vertical::rewrite_with_alignment,
     visitor::FmtVisitor,
@@ -557,7 +557,11 @@ fn rewrite_single_line_block(
 ) -> Option<String> {
     if is_simple_block(context, block, attrs) {
         let expr_shape = shape.offset_left(last_line_width(prefix))?;
-        let expr_str = block.stmts[0].rewrite(context, expr_shape)?;
+        let expr_str = block
+            .stmts
+            .find_non_empty()
+            .unwrap()
+            .rewrite(context, expr_shape)?;
         let label_str = rewrite_label(label);
         let result = format!("{}{}{{ {} }}", prefix, label_str, expr_str);
         if result.len() <= shape.width && !result.contains('\n') {
@@ -826,11 +830,11 @@ impl<'a> ControlFlow<'a> {
             }
 
             let new_width = width.checked_sub(pat_expr_str.len() + fixed_cost)?;
-            let expr = &self.block.stmts[0];
+            let expr = self.block.stmts.find_non_empty().unwrap();
             let if_str = expr.rewrite(context, Shape::legacy(new_width, Indent::empty()))?;
 
             let new_width = new_width.checked_sub(if_str.len())?;
-            let else_expr = &else_node.stmts[0];
+            let else_expr = else_node.stmts.find_non_empty().unwrap();
             let else_str = else_expr.rewrite(context, Shape::legacy(new_width, Indent::empty()))?;
 
             if if_str.contains('\n') || else_str.contains('\n') {
@@ -1182,8 +1186,14 @@ pub(crate) fn is_simple_block(
     block: &ast::Block,
     attrs: Option<&[ast::Attribute]>,
 ) -> bool {
-    block.stmts.len() == 1
-        && stmt_is_expr(&block.stmts[0])
+    let mut non_empty_stmts = block
+        .stmts
+        .iter()
+        .filter(|stmt| !matches!(stmt.kind, ast::StmtKind::Empty));
+    let first = non_empty_stmts.next();
+    first.is_some()
+        && non_empty_stmts.next().is_none()
+        && stmt_is_expr(first.unwrap())
         && !block_contains_comment(context, block)
         && attrs.map_or(true, |a| a.is_empty())
 }
