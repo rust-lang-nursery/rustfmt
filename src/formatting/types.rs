@@ -530,11 +530,12 @@ fn rewrite_bounded_lifetime(
     shape: Shape,
 ) -> Option<String> {
     let result = lt.rewrite(context, shape)?;
+    let colon = type_bound_colon(context);
 
     if bounds.is_empty() {
+        let result = format!("{}{}", result, colon);
         Some(result)
     } else {
-        let colon = type_bound_colon(context);
         let overhead = last_line_width(&result) + colon.len();
         let result = format!(
             "{}{}{}",
