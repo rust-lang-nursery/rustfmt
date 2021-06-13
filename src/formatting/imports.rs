@@ -15,7 +15,7 @@ use rustc_span::{
 use crate::config::lists::*;
 use crate::config::{Edition, IndentStyle};
 use crate::formatting::{
-    comment::combine_strs_with_missing_comments,
+    comment::{combine_strs_with_missing_comments, contains_comment},
     lists::{definitive_tactic, itemize_list, write_list, ListFormatting, ListItem, Separator},
     reorder::{compare_as_versions, compare_opt_ident_as_versions},
     rewrite::{Rewrite, RewriteContext},
@@ -407,6 +407,19 @@ impl UseTree {
             }
         }
 
+        let rename_to_alias = |rename: &Option<symbol::Ident>| {
+            rename.and_then(|ident| {
+                if ident.name == sym::underscore_imports {
+                    // for impl-only-use
+                    Some("_".to_owned())
+                } else if ident == path_to_imported_ident(&a.prefix) {
+                    None
+                } else {
+                    Some(rewrite_ident(context, ident).to_owned())
+                }
+            })
+        };
+
         match a.kind {
             UseTreeKind::Glob => {
                 // in case of a global path and the glob starts at the root, e.g., "::*"
@@ -431,19 +444,53 @@ impl UseTree {
                     false,
                 )
                 .collect();
-                // in case of a global path and the nested list starts at the root,
-                // e.g., "::{foo, bar}"
-                if a.prefix.segments.len() == 1 && leading_modsep {
-                    result.path.push(UseSegment::Ident("".to_owned(), None));
-                }
-                result.path.push(UseSegment::List(
-                    list.iter()
-                        .zip(items.into_iter())
-                        .map(|(t, list_item)| {
-                            Self::from_ast(context, &t.0, Some(list_item), None, None, None)
-                        })
-                        .collect(),
-                ));
+
+                // find whether a case of a global path and the nested list starts at the root
+                // with one item, e.g., "::{foo as bar}", and does not include comments.
+                let mut first_item = None;
+                let mut first_alias = None;
+                if a.prefix.segments.len() == 1 && list.len() == 1 && result.to_string().is_empty()
+                {
+                    let first = &list[0].0;
+                    match first.kind {
+                        UseTreeKind::Simple(ref rename, ..) => {
+                            // "-1" for the "}"
+                            let snippet = context
+                                .snippet(mk_sp(first.span.lo(), span.hi() - BytePos(1)))
+                                .trim();
+                            // Ensure that indent does not include comments
+                            if !contains_comment(&snippet) {
+                                first_item = Some(first);
+                                first_alias = rename_to_alias(rename);
+                            }
+                        }
+                        _ => {}
+                    }
+                };
+
+                if let Some(first) = first_item {
+                    // in case of a global path and the nested list starts at the root
+                    // with one item, e.g., "::{foo as bar}"
+                    let tree = Self::from_ast(context, first, None, None, None, None);
+                    let mod_sep = if leading_modsep { "::" } else { "" };
+                    let seg = UseSegment::Ident(format!("{}{}", mod_sep, tree), first_alias);
+                    result.path.pop();
+                    result.path.push(seg);
+                } else {
+                    // in case of a global path and the nested list starts at the root,
+                    // e.g., "::{foo, bar}"
+                    if a.prefix.segments.len() == 1 && leading_modsep {
+                        result.path.push(UseSegment::Ident("".to_owned(), None));
+                    }
+                    result.path.push(UseSegment::List(
+                        list.iter()
+                            .zip(items.into_iter())
+                            .map(|(t, list_item)| {
+                                Self::from_ast(context, &t.0, Some(list_item), None, None, None)
+                            })
+                            .collect(),
+                    ));
+                };
             }
             UseTreeKind::Simple(ref rename, ..) => {
                 // If the path has leading double colons and is composed of only 2 segments, then we
@@ -455,16 +502,7 @@ impl UseTree {
                 } else {
                     rewrite_ident(context, path_to_imported_ident(&a.prefix)).to_owned()
                 };
-                let alias = rename.and_then(|ident| {
-                    if ident.name == sym::underscore_imports {
-                        // for impl-only-use
-                        Some("_".to_owned())
-                    } else if ident == path_to_imported_ident(&a.prefix) {
-                        None
-                    } else {
-                        Some(rewrite_ident(context, ident).to_owned())
-                    }
-                });
+                let alias = rename_to_alias(rename);
                 let segment = match name.as_ref() {
                     "self" => UseSegment::Slf(alias),
                     "super" => UseSegment::Super(alias),
