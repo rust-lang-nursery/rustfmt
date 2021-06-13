@@ -1125,6 +1125,12 @@ enum CharClassesStatus {
     /// Character inside a block-commented string, with the integer indicating the nesting deepness
     /// of the comment
     StringInBlockComment(u32),
+    CodeBlockPrefix(u32, u32),
+    CodeBlockSuffix(u32, u32, u32),
+    /// Character inside a multiline code block, with the first integer indicating the number of
+    /// backticks used to open the block and the second integer indicating the nesting deepness of
+    /// the comment
+    CodeBlock(u32, u32),
     /// Status when the '/' has been consumed, but not yet the '*', deepness is
     /// the new deepness (after the comment opening).
     BlockCommentOpening(u32),
@@ -1167,6 +1173,12 @@ pub(crate) enum FullCodeCharKind {
     EndString,
     /// Inside a string.
     InString,
+    /// Start of a multiline doc code block
+    StartCodeBlock,
+    /// Inside a multilne doc code block
+    InCodeBlock,
+    /// End of mutline doc code block
+    EndCodeBlock,
 }
 
 impl FullCodeCharKind {
@@ -1179,6 +1191,9 @@ impl FullCodeCharKind {
                 | FullCodeCharKind::StartStringCommented
                 | FullCodeCharKind::InStringCommented
                 | FullCodeCharKind::EndStringCommented
+                | FullCodeCharKind::StartCodeBlock
+                | FullCodeCharKind::InCodeBlock
+                | FullCodeCharKind::EndCodeBlock
         )
     }
 
@@ -1190,6 +1205,9 @@ impl FullCodeCharKind {
                 | FullCodeCharKind::StartStringCommented
                 | FullCodeCharKind::InStringCommented
                 | FullCodeCharKind::EndStringCommented
+                | FullCodeCharKind::StartCodeBlock
+                | FullCodeCharKind::InCodeBlock
+                | FullCodeCharKind::EndCodeBlock
         )
     }
 
@@ -1201,6 +1219,10 @@ impl FullCodeCharKind {
     pub(crate) fn is_commented_string(self) -> bool {
         self == FullCodeCharKind::InStringCommented
             || self == FullCodeCharKind::StartStringCommented
+    }
+
+    pub(crate) fn is_code_block(self) -> bool {
+        self == FullCodeCharKind::InCodeBlock || self == FullCodeCharKind::StartCodeBlock
     }
 }
 
@@ -1349,6 +1371,49 @@ where
                     CharClassesStatus::StringInBlockComment(deepness)
                 }
             }
+            CharClassesStatus::CodeBlock(backticks, deepness) => {
+                char_kind = FullCodeCharKind::InCodeBlock;
+                if chr == '`' && self.base.peek().map(RichChar::get_char) == Some('`') {
+                    CharClassesStatus::CodeBlockSuffix(1, backticks, deepness)
+                } else if chr == '*' && self.base.peek().map(RichChar::get_char) == Some('/') {
+                    char_kind = FullCodeCharKind::InComment;
+                    CharClassesStatus::BlockCommentClosing(deepness - 1)
+                } else {
+                    CharClassesStatus::CodeBlock(backticks, deepness)
+                }
+            }
+            CharClassesStatus::CodeBlockPrefix(backticks, deepness) => {
+                char_kind = FullCodeCharKind::InComment;
+                match chr {
+                    '`' => CharClassesStatus::CodeBlockPrefix(backticks + 1, deepness),
+                    '\n' if backticks > 2 => CharClassesStatus::CodeBlock(backticks, deepness),
+                    '*' if self.base.peek().map(RichChar::get_char) == Some('/') => {
+                        char_kind = FullCodeCharKind::InComment;
+                        CharClassesStatus::BlockCommentClosing(deepness - 1)
+                    }
+                    _ if backticks < 3 => CharClassesStatus::BlockComment(deepness),
+                    _ => CharClassesStatus::CodeBlockPrefix(backticks, deepness),
+                }
+            }
+            CharClassesStatus::CodeBlockSuffix(backticks, need_backticks, deepness) => {
+                char_kind = FullCodeCharKind::InCodeBlock;
+                match chr {
+                    '`' => {
+                        CharClassesStatus::CodeBlockSuffix(backticks + 1, need_backticks, deepness)
+                    }
+                    '\n' if backticks >= need_backticks => {
+                        CharClassesStatus::BlockComment(deepness)
+                    }
+                    '*' if self.base.peek().map(RichChar::get_char) == Some('/') => {
+                        char_kind = FullCodeCharKind::InComment;
+                        CharClassesStatus::BlockCommentClosing(deepness - 1)
+                    }
+                    _ if char::is_whitespace(chr) && backticks >= need_backticks => {
+                        CharClassesStatus::CodeBlockSuffix(backticks, need_backticks, deepness)
+                    }
+                    _ => CharClassesStatus::CodeBlock(need_backticks, deepness),
+                }
+            }
             CharClassesStatus::BlockComment(deepness) => {
                 assert_ne!(deepness, 0);
                 char_kind = FullCodeCharKind::InComment;
@@ -1358,6 +1423,9 @@ where
                     }
                     Some(next) if next.get_char() == '*' && chr == '/' => {
                         CharClassesStatus::BlockCommentOpening(deepness + 1)
+                    }
+                    Some(next) if next.get_char() == '`' && chr == '`' => {
+                        CharClassesStatus::CodeBlockPrefix(1, deepness)
                     }
                     _ if chr == '"' => CharClassesStatus::StringInBlockComment(deepness),
                     _ => self.status,
@@ -1434,6 +1502,12 @@ impl<'a> Iterator for LineClasses<'a> {
                     }
                     (FullCodeCharKind::InString, FullCodeCharKind::Normal) => {
                         FullCodeCharKind::EndString
+                    }
+                    (FullCodeCharKind::InComment, FullCodeCharKind::InCodeBlock) => {
+                        FullCodeCharKind::StartCodeBlock
+                    }
+                    (FullCodeCharKind::InCodeBlock, FullCodeCharKind::InComment) => {
+                        FullCodeCharKind::EndCodeBlock
                     }
                     (FullCodeCharKind::InComment, FullCodeCharKind::InStringCommented) => {
                         FullCodeCharKind::StartStringCommented
@@ -1744,6 +1818,184 @@ mod test {
         assert_eq!((FullCodeCharKind::EndComment, '\n'), iter.next().unwrap());
         assert_eq!((FullCodeCharKind::Normal, '\n'), iter.next().unwrap());
         assert_eq!(None, iter.next());
+    }
+
+    #[test]
+    fn char_classes_code_block() {
+        fn check(cmnt: &str, kinds: &[(FullCodeCharKind, char)]) {
+            let mut iter = CharClasses::new(cmnt.chars());
+            let mut kind_iter = kinds.iter();
+            assert_eq!(cmnt.len(), kinds.len());
+
+            while let Some(((act_kind, act_char), (expt_kind, expt_char))) =
+                iter.next().zip(kind_iter.next())
+            {
+                assert_eq!((expt_kind, expt_char), (&act_kind, &act_char));
+            }
+        }
+
+        check(
+            "/*\n````test\nc\n```\nc\n````\n */",
+            &[
+                (FullCodeCharKind::StartComment, '/'),
+                (FullCodeCharKind::InComment, '*'),
+                (FullCodeCharKind::InComment, '\n'),
+                (FullCodeCharKind::InComment, '`'),
+                (FullCodeCharKind::InComment, '`'),
+                (FullCodeCharKind::InComment, '`'),
+                (FullCodeCharKind::InComment, '`'),
+                (FullCodeCharKind::InComment, 't'),
+                (FullCodeCharKind::InComment, 'e'),
+                (FullCodeCharKind::InComment, 's'),
+                (FullCodeCharKind::InComment, 't'),
+                (FullCodeCharKind::InComment, '\n'),
+                (FullCodeCharKind::InCodeBlock, 'c'),
+                (FullCodeCharKind::InCodeBlock, '\n'),
+                (FullCodeCharKind::InCodeBlock, '`'),
+                (FullCodeCharKind::InCodeBlock, '`'),
+                (FullCodeCharKind::InCodeBlock, '`'),
+                (FullCodeCharKind::InCodeBlock, '\n'),
+                (FullCodeCharKind::InCodeBlock, 'c'),
+                (FullCodeCharKind::InCodeBlock, '\n'),
+                (FullCodeCharKind::InCodeBlock, '`'),
+                (FullCodeCharKind::InCodeBlock, '`'),
+                (FullCodeCharKind::InCodeBlock, '`'),
+                (FullCodeCharKind::InCodeBlock, '`'),
+                (FullCodeCharKind::InCodeBlock, '\n'),
+                (FullCodeCharKind::InComment, ' '),
+                (FullCodeCharKind::InComment, '*'),
+                (FullCodeCharKind::EndComment, '/'),
+            ],
+        );
+
+        check(
+            "/*\n``test\n``abc`\n```test\nc\n``a`\n```\n */",
+            &[
+                (FullCodeCharKind::StartComment, '/'),
+                (FullCodeCharKind::InComment, '*'),
+                (FullCodeCharKind::InComment, '\n'),
+                (FullCodeCharKind::InComment, '`'),
+                (FullCodeCharKind::InComment, '`'),
+                (FullCodeCharKind::InComment, 't'),
+                (FullCodeCharKind::InComment, 'e'),
+                (FullCodeCharKind::InComment, 's'),
+                (FullCodeCharKind::InComment, 't'),
+                (FullCodeCharKind::InComment, '\n'),
+                (FullCodeCharKind::InComment, '`'),
+                (FullCodeCharKind::InComment, '`'),
+                (FullCodeCharKind::InComment, 'a'),
+                (FullCodeCharKind::InComment, 'b'),
+                (FullCodeCharKind::InComment, 'c'),
+                (FullCodeCharKind::InComment, '`'),
+                (FullCodeCharKind::InComment, '\n'),
+                (FullCodeCharKind::InComment, '`'),
+                (FullCodeCharKind::InComment, '`'),
+                (FullCodeCharKind::InComment, '`'),
+                (FullCodeCharKind::InComment, 't'),
+                (FullCodeCharKind::InComment, 'e'),
+                (FullCodeCharKind::InComment, 's'),
+                (FullCodeCharKind::InComment, 't'),
+                (FullCodeCharKind::InComment, '\n'),
+                (FullCodeCharKind::InCodeBlock, 'c'),
+                (FullCodeCharKind::InCodeBlock, '\n'),
+                (FullCodeCharKind::InCodeBlock, '`'),
+                (FullCodeCharKind::InCodeBlock, '`'),
+                (FullCodeCharKind::InCodeBlock, 'a'),
+                (FullCodeCharKind::InCodeBlock, '`'),
+                (FullCodeCharKind::InCodeBlock, '\n'),
+                (FullCodeCharKind::InCodeBlock, '`'),
+                (FullCodeCharKind::InCodeBlock, '`'),
+                (FullCodeCharKind::InCodeBlock, '`'),
+                (FullCodeCharKind::InCodeBlock, '\n'),
+                (FullCodeCharKind::InComment, ' '),
+                (FullCodeCharKind::InComment, '*'),
+                (FullCodeCharKind::EndComment, '/'),
+            ],
+        );
+
+        check(
+            "/*\n```*/",
+            &[
+                (FullCodeCharKind::StartComment, '/'),
+                (FullCodeCharKind::InComment, '*'),
+                (FullCodeCharKind::InComment, '\n'),
+                (FullCodeCharKind::InComment, '`'),
+                (FullCodeCharKind::InComment, '`'),
+                (FullCodeCharKind::InComment, '`'),
+                (FullCodeCharKind::InComment, '*'),
+                (FullCodeCharKind::EndComment, '/'),
+            ],
+        );
+
+        check(
+            "/*\n``*/",
+            &[
+                (FullCodeCharKind::StartComment, '/'),
+                (FullCodeCharKind::InComment, '*'),
+                (FullCodeCharKind::InComment, '\n'),
+                (FullCodeCharKind::InComment, '`'),
+                (FullCodeCharKind::InComment, '`'),
+                (FullCodeCharKind::InComment, '*'),
+                (FullCodeCharKind::EndComment, '/'),
+            ],
+        );
+
+        check(
+            "/*\n```\n */",
+            &[
+                (FullCodeCharKind::StartComment, '/'),
+                (FullCodeCharKind::InComment, '*'),
+                (FullCodeCharKind::InComment, '\n'),
+                (FullCodeCharKind::InComment, '`'),
+                (FullCodeCharKind::InComment, '`'),
+                (FullCodeCharKind::InComment, '`'),
+                (FullCodeCharKind::InComment, '\n'),
+                (FullCodeCharKind::InCodeBlock, ' '),
+                (FullCodeCharKind::InComment, '*'),
+                (FullCodeCharKind::EndComment, '/'),
+            ],
+        );
+
+        check(
+            "/*\n```\nc\n``*/",
+            &[
+                (FullCodeCharKind::StartComment, '/'),
+                (FullCodeCharKind::InComment, '*'),
+                (FullCodeCharKind::InComment, '\n'),
+                (FullCodeCharKind::InComment, '`'),
+                (FullCodeCharKind::InComment, '`'),
+                (FullCodeCharKind::InComment, '`'),
+                (FullCodeCharKind::InComment, '\n'),
+                (FullCodeCharKind::InCodeBlock, 'c'),
+                (FullCodeCharKind::InCodeBlock, '\n'),
+                (FullCodeCharKind::InCodeBlock, '`'),
+                (FullCodeCharKind::InCodeBlock, '`'),
+                (FullCodeCharKind::InComment, '*'),
+                (FullCodeCharKind::EndComment, '/'),
+            ],
+        );
+
+        check(
+            "/*\n`````\nc\n```*/",
+            &[
+                (FullCodeCharKind::StartComment, '/'),
+                (FullCodeCharKind::InComment, '*'),
+                (FullCodeCharKind::InComment, '\n'),
+                (FullCodeCharKind::InComment, '`'),
+                (FullCodeCharKind::InComment, '`'),
+                (FullCodeCharKind::InComment, '`'),
+                (FullCodeCharKind::InComment, '`'),
+                (FullCodeCharKind::InComment, '`'),
+                (FullCodeCharKind::InComment, '\n'),
+                (FullCodeCharKind::InCodeBlock, 'c'),
+                (FullCodeCharKind::InCodeBlock, '\n'),
+                (FullCodeCharKind::InCodeBlock, '`'),
+                (FullCodeCharKind::InCodeBlock, '`'),
+                (FullCodeCharKind::InCodeBlock, '`'),
+                (FullCodeCharKind::InComment, '*'),
+                (FullCodeCharKind::EndComment, '/'),
+            ],
+        );
     }
 
     #[test]

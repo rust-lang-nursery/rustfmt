@@ -616,7 +616,8 @@ pub(crate) fn trim_left_preserve_layout(
             let new_veto_trim_value = (kind == FullCodeCharKind::InString
                 || kind == FullCodeCharKind::InStringCommented)
                 && !line.ends_with('\\');
-            let line = if veto_trim || new_veto_trim_value {
+            let code_block = kind.is_code_block();
+            let line = if veto_trim || new_veto_trim_value || code_block {
                 veto_trim = new_veto_trim_value;
                 trimmed = false;
                 line
