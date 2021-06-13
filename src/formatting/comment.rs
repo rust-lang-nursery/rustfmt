@@ -11,9 +11,9 @@ use crate::formatting::{
     shape::{Indent, Shape},
     string::{rewrite_string, StringFormat},
     utils::{
-        count_newlines, first_line_width, format_code_block, last_line_width, tab_to_spaces,
-        trim_end_unless_two_whitespaces, trim_left_preserve_layout, trimmed_last_line_width,
-        unicode_str_width,
+        count_newlines, first_line_width, format_code_block, is_single_line, last_line_width,
+        tab_to_spaces, trim_end_unless_two_whitespaces, trim_left_preserve_layout,
+        trimmed_last_line_width, unicode_str_width,
     },
 };
 
@@ -156,6 +156,18 @@ pub(crate) fn is_last_comment_block(s: &str) -> bool {
     s.trim_end().ends_with("*/")
 }
 
+/// Returns true if the first line of the passed string starts with a comment
+/// that end on that line.
+fn is_first_comment_ends_on_first_line(s: &str) -> bool {
+    if s.starts_with("/*") {
+        s.lines().next().map_or(false, |l| l.contains("*/"))
+    } else if s.starts_with("//") {
+        true
+    } else {
+        false
+    }
+}
+
 /// Combine `prev_str` and `next_str` into a single `String`. `span` may contain
 /// comments between two strings. If there are such comments, then that will be
 /// recovered. If `allow_extend` is true and there is no comment between the two
@@ -221,7 +233,13 @@ pub(crate) fn combine_strs_with_missing_comments(
         Cow::from("")
     } else {
         let one_line_width = last_line_width(prev_str) + first_line_width(&missing_comment) + 1;
-        if prefer_same_line && one_line_width <= shape.width {
+        // First comment of a comments block can be in same line if ends in the first line
+        // (and meets other conditions)
+        if prefer_same_line
+            && one_line_width <= shape.width
+            && (is_single_line(&missing_comment)
+                || is_first_comment_ends_on_first_line(&missing_comment))
+        {
             Cow::from(" ")
         } else {
             indent.to_string_with_newline(config)
@@ -236,7 +254,7 @@ pub(crate) fn combine_strs_with_missing_comments(
         indent.to_string_with_newline(config)
     } else {
         one_line_width += missing_comment.len() + first_sep.len() + 1;
-        allow_one_line &= !missing_comment.starts_with("//") && !missing_comment.contains('\n');
+        allow_one_line &= !missing_comment.contains('\n');
         if prefer_same_line && allow_one_line && one_line_width <= shape.width {
             Cow::from(" ")
         } else {
