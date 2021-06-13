@@ -889,6 +889,11 @@ pub(crate) fn format_impl(
 
             visitor.format_missing(item.span.hi() - BytePos(1));
 
+            context
+                .skipped_range
+                .borrow_mut()
+                .append(&mut visitor.skipped_range.borrow_mut());
+
             let inner_indent_str = visitor.block_indent.to_string_with_newline(context.config);
             let outer_indent_str = offset.block_only().to_string_with_newline(context.config);
 
@@ -1260,6 +1265,11 @@ pub(crate) fn format_trait(
             }
 
             visitor.format_missing(item.span.hi() - BytePos(1));
+
+            context
+                .skipped_range
+                .borrow_mut()
+                .append(&mut visitor.skipped_range.borrow_mut());
 
             let inner_indent_str = visitor.block_indent.to_string_with_newline(context.config);
 

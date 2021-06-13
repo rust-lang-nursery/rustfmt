@@ -671,7 +671,7 @@ impl<'b, 'a: 'b> FmtVisitor<'a> {
         skip_out_of_file_lines_range_visitor!(self, ti.span);
 
         if self.visit_attrs(&ti.attrs, ast::AttrStyle::Outer) {
-            self.push_skipped_with_span(ti.attrs.as_slice(), ti.span, ti.span);
+            self.push_skipped_with_span(ti.attrs.as_slice(), ti.span(), ti.span);
             return;
         }
         let skip_context_outer = self.skip_context.clone();
@@ -731,7 +731,7 @@ impl<'b, 'a: 'b> FmtVisitor<'a> {
         skip_out_of_file_lines_range_visitor!(self, ii.span);
 
         if self.visit_attrs(&ii.attrs, ast::AttrStyle::Outer) {
-            self.push_skipped_with_span(ii.attrs.as_slice(), ii.span, ii.span);
+            self.push_skipped_with_span(ii.attrs.as_slice(), ii.span(), ii.span);
             return;
         }
         let skip_context_outer = self.skip_context.clone();
@@ -853,19 +853,30 @@ impl<'b, 'a: 'b> FmtVisitor<'a> {
         main_span: Span,
     ) {
         self.format_missing_with_indent(source!(self, item_span).lo());
+        let init_line_number = self.line_number;
+
+        /* FIXME: is the following comment correct, i.e all attributes are not skipped?
+         * If not correct, then comment should be removed;
+         * If correct, then skipped range should depend on end of attributes.
+         * Currently, skipped range starts after the first attribute line.
+         */
         // do not take into account the lines with attributes as part of the skipped range
-        let attrs_end = attrs
-            .iter()
-            .map(|attr| self.parse_sess.line_of_byte_pos(attr.span.hi()))
-            .max()
-            .unwrap_or(1);
         let first_line = self.parse_sess.line_of_byte_pos(main_span.lo());
+        let attrs_start = attrs
+            .first()
+            .map(|attr| self.parse_sess.line_of_byte_pos(attr.span.lo()))
+            .unwrap_or(1);
+
         // Statement can start after some newlines and/or spaces
         // or it can be on the same line as the last attribute.
         // So here we need to take a minimum between the two.
-        let lo = std::cmp::min(attrs_end + 1, first_line);
+        let lo = std::cmp::min(attrs_start + 1, first_line);
         self.push_rewrite_inner(item_span, None);
-        let hi = self.line_number + 1;
+        let hi = std::cmp::max(
+            self.line_number + 1,
+            attrs_start + self.line_number - init_line_number,
+        );
+
         self.skipped_range
             .borrow_mut()
             .push(NonFormattedRange::new(lo, hi));

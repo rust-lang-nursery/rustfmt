@@ -28,7 +28,7 @@ pub struct FormatResult {
 }
 
 /// The inclusive range of the input which was not formatted, represented by a pair of line numbers.
-#[derive(Debug, Clone, Copy)]
+#[derive(Debug, Clone, Copy, PartialEq, PartialOrd)]
 pub(crate) struct NonFormattedRange {
     lo: usize,
     hi: usize,
@@ -262,6 +262,7 @@ impl NonFormattedRange {
 #[cfg(test)]
 mod test {
     use super::*;
+    use crate::formatting::utils::format_snippet;
 
     #[cfg(test)]
     mod has_failing_errors {
@@ -418,5 +419,118 @@ mod test {
             );
             assert!(report.has_failing_errors(vec![(file_name, &config)].into_iter().collect()));
         }
+    }
+
+    #[test]
+    fn test_skipped_ranges() {
+        #[rustfmt::skip]
+        let snippet = "// Impl - original code from issue #4706
+            impl      Foo          {
+            #[rustfmt::skip] // Lines 4-7
+            fn foo() {
+            Bar     
+            //     ^ there is whitespace here
+            }
+
+            fn bar() {
+            Qux // asdf
+            }
+            }
+
+// Impl - all skipped lines end with white spaces
+            #[rustfmt::skip] // Lines 15-22
+            /// DOC1   
+            /// DOC2   
+            impl      Foo1          {     
+            fn foo1() {
+            Bar1     
+            }   
+            }     
+
+            impl      Foo2          {
+            #[rustfmt::skip] // Lines 26-30
+            /// DOC1   
+            /// DOC2   
+            fn foo2() {    
+            Bar2     
+            }       
+            }
+
+            impl      Foo3          {
+            fn foo3() {
+            #[rustfmt::skip] // Lines 36-38
+            /// DOC1   
+            /// DOC2        
+            Bar2     
+            }  
+            }
+
+// fn - all skipped lines end with white spaces            
+            #[rustfmt::skip] // Lines 43-48
+            /// DOC1   
+            /// DOC2   
+            fn foo2() {    
+            Bar2     
+            }       
+
+            fn foo3() {
+            #[rustfmt::skip] // Lines 52-54
+            /// DOC1   
+            /// DOC2        
+            Bar2     
+            }
+
+// Trait - all skipped lines end with white spaces
+
+            // All skipped lines end with white spaces
+            #[rustfmt::skip] // Lines 60-66
+            #[allow(non_snake_case)]    
+            trait Animal1 {    
+            fn new(name: &'static str) -> Self;    
+
+            fn talk(&self) {}     
+            }    
+
+            // All skipped lines end with white spaces
+            #[allow(non_snake_case)]
+            trait Animal1 {
+            #[rustfmt::skip] // Lines 72-72
+            fn new(name: &'static str) -> Self;    
+
+            fn talk(&self) {}    
+            }
+
+            // Internal skipped line
+            #[allow(non_snake_case)]
+            trait Animal3 {
+            fn new(name: &'static str) -> Self;
+
+            fn talk(&self) {
+            #[rustfmt::skip] // Lines 84-84
+            let x = 1;    
+            //          ^ there is whitespace here
+            }
+            }
+
+// Macro - all skipped lines end with white spaces.
+            #[rustfmt::skip] // Lines  90-93
+            macro_rules! my_macro1 {    
+            () => {};    
+
+        }";
+
+        let mut actual: Vec<NonFormattedRange> = vec![];
+        #[rustfmt::skip]
+        let expected: Vec<NonFormattedRange> = vec![NonFormattedRange { lo: 4, hi: 7 }, NonFormattedRange { lo: 15, hi: 22 }, NonFormattedRange { lo: 26, hi: 30 }, NonFormattedRange { lo: 36, hi: 38 }, NonFormattedRange { lo: 43, hi: 48 }, NonFormattedRange { lo: 52, hi: 54 }, NonFormattedRange { lo: 60, hi: 66 }, NonFormattedRange { lo: 72, hi: 72 }, NonFormattedRange { lo: 84, hi: 84 }, NonFormattedRange { lo: 90, hi: 94 }];
+
+        let output = format_snippet(snippet, &Config::default(), false);
+
+        let output_ok = output.map_or(false, |o| {
+            actual = o.non_formatted_ranges;
+            (actual.len() == expected.len())
+                && actual.iter().zip(expected.clone()).all(|(a, b)| *a == b)
+        });
+
+        assert!(output_ok, "\nexpect={:?},\nactual={:?}", expected, actual);
     }
 }

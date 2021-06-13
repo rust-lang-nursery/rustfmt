@@ -1568,6 +1568,11 @@ fn rewrite_macro_with_items(
         visitor.visit_item(&item, false);
     }
 
+    context
+        .skipped_range
+        .borrow_mut()
+        .append(&mut visitor.skipped_range.borrow_mut());
+
     let mut result = String::with_capacity(256);
     result.push_str(&macro_name);
     result.push_str(opener);

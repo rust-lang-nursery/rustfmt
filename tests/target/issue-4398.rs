@@ -6,7 +6,7 @@ impl Struct {
 
 impl Struct {
     /// Documentation for `foo`
-    #[rustfmt::skip] // comment on why use a skip here
+       #[rustfmt::skip] // comment on why use a skip here
     pub fn foo(&self) {}
 }
 

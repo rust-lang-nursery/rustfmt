@@ -164,6 +164,15 @@ fn format_project(
         )
     });
 
+    // Debug messages with skipped ranges for all input files
+    for (filename, format_result) in format_report.format_result_as_rc().borrow().iter() {
+        let skipped_ranges = &format_result.formatted_snippet().non_formatted_ranges;
+        debug!(
+            "format_project: filename \"{:?}\" skipped_ranges \"{:?}\"",
+            filename, skipped_ranges
+        );
+    }
+
     Ok(format_report)
 }
 
