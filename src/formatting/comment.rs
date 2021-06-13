@@ -156,6 +156,11 @@ pub(crate) fn is_last_comment_block(s: &str) -> bool {
     s.trim_end().ends_with("*/")
 }
 
+/// Returns true if the first line of the passed string started with a block-comment.
+pub(crate) fn is_first_comment_block(s: &str) -> bool {
+    s.trim_start().starts_with("/*")
+}
+
 /// Combine `prev_str` and `next_str` into a single `String`. `span` may contain
 /// comments between two strings. If there are such comments, then that will be
 /// recovered. If `allow_extend` is true and there is no comment between the two

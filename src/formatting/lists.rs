@@ -8,12 +8,14 @@ use unicode_segmentation::UnicodeSegmentation;
 
 use crate::config::{lists::*, Config, IndentStyle};
 use crate::formatting::{
-    comment::{comment_style, find_comment_end, rewrite_comment, FindUncommented},
+    comment::{
+        comment_style, find_comment_end, is_last_comment_block, rewrite_comment, FindUncommented,
+    },
     rewrite::RewriteContext,
     shape::{Indent, Shape},
     utils::{
-        count_newlines, first_line_width, last_line_width, mk_sp, starts_with_newline,
-        unicode_str_width,
+        count_newlines, first_line_width, last_line_contains_single_line_comment, last_line_width,
+        mk_sp, starts_with_newline, unicode_str_width,
     },
     visitor::SnippetProvider,
 };
@@ -281,6 +283,10 @@ where
 
     let mut line_len = 0;
     let indent_str = &formatting.shape.indent.to_string(formatting.config);
+    let newline_str = &formatting
+        .shape
+        .indent
+        .to_string_with_newline(formatting.config);
     while let Some((i, item)) = iter.next() {
         let item = item.as_ref();
         let inner_item = item.item.as_ref()?;
@@ -291,6 +297,8 @@ where
             SeparatorPlace::Back => !last || trailing_separator,
         };
         let item_sep_len = if separate { sep_len } else { 0 };
+        let item_has_comments = item.post_comment.is_some() || item.pre_comment.is_some();
+        let item_has_both_comments = item.post_comment.is_some() && item.pre_comment.is_some();
 
         // Item string may be multi-line. Its length (used for block comment alignment)
         // should be only the length of the last line.
@@ -318,17 +326,17 @@ where
                 } else if i < num_args_before {
                     result.push(' ');
                 } else if i <= num_args_before + 1 {
-                    result.push('\n');
-                    result.push_str(indent_str);
+                    result.push_str(newline_str);
                 } else {
                     result.push(' ');
                 }
             }
             DefinitiveListTactic::Vertical
-                if !first && !inner_item.is_empty() && !result.is_empty() =>
+                if !first
+                    && (!inner_item.is_empty() || item_has_comments)
+                    && !result.is_empty() =>
             {
-                result.push('\n');
-                result.push_str(indent_str);
+                result.push_str(newline_str);
             }
             DefinitiveListTactic::Mixed => {
                 let total_width = total_item_width(item) + item_sep_len;
@@ -385,8 +393,7 @@ where
                     if keep_comment {
                         result.push(' ');
                     } else {
-                        result.push('\n');
-                        result.push_str(indent_str);
+                        result.push_str(newline_str);
                         // This is the width of the item (without comments).
                         line_len = item.item.as_ref().map_or(0, |s| unicode_str_width(&s));
                     }
@@ -397,7 +404,9 @@ where
             item_max_width = None;
         }
 
-        if separate && sep_place.is_front() && !first {
+        if inner_item.is_empty() && item_has_both_comments {
+            result.push_str(newline_str);
+        } else if separate && sep_place.is_front() && !first {
             result.push_str(formatting.separator.trim());
             result.push(' ');
         }
@@ -466,7 +475,7 @@ where
                         formatting.config.max_width(),
                     ));
                 }
-                let overhead = if starts_with_newline(comment) {
+                let overhead = if starts_with_newline(comment) || inner_item.is_empty() {
                     0
                 } else if let Some(max_width) = *item_max_width {
                     max_width + 2
@@ -476,6 +485,7 @@ where
                 };
                 let width = formatting.shape.width.checked_sub(overhead).unwrap_or(1);
                 let offset = formatting.shape.indent + overhead;
+
                 let comment_start_trimmed = comment.trim_start();
 
                 // Find if first comment is single line and the end of the first comment
@@ -594,11 +604,12 @@ where
                 }
                 // An additional space for the missing trailing separator (or
                 // if we skipped alignment above).
-                if !formatting.align_comments
-                    || (last
-                        && item_max_width.is_some()
-                        && !separate
-                        && !formatting.separator.is_empty())
+                if !inner_item.is_empty()
+                    && (!formatting.align_comments
+                        || (last
+                            && item_max_width.is_some()
+                            && !separate
+                            && !formatting.separator.is_empty()))
                 {
                     result.push(' ');
                 }
@@ -879,9 +890,10 @@ where
                 .span_to_snippet(mk_sp(self.prev_span_end, (self.get_lo)(&item)))
                 .unwrap_or("");
             let (pre_comment, pre_comment_style) = extract_pre_comment(pre_snippet);
+            let next_item = self.inner.peek();
 
             // Post-comment
-            let next_start = match self.inner.peek() {
+            let next_start = match next_item {
                 Some(next_item) => (self.get_lo)(next_item),
                 None => self.next_span_start,
             };
@@ -889,12 +901,20 @@ where
                 .snippet_provider
                 .span_to_snippet(mk_sp((self.get_hi)(&item), next_start))
                 .unwrap_or("");
-            let comment_end = get_comment_end(
-                post_snippet,
-                self.separator,
-                self.terminator,
-                self.inner.peek().is_none(),
-            );
+            let comment_end = if next_item.is_none()
+                && (last_line_contains_single_line_comment(post_snippet)
+                    || is_last_comment_block(post_snippet))
+            {
+                // To get the trailing single line comment of the last item
+                post_snippet.len()
+            } else {
+                get_comment_end(
+                    post_snippet,
+                    self.separator,
+                    self.terminator,
+                    self.inner.peek().is_none(),
+                )
+            };
             let new_lines = has_extra_newline(post_snippet, comment_end);
             let post_comment = extract_post_comment(post_snippet, comment_end, self.separator);
 
