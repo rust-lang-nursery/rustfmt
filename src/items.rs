@@ -1426,12 +1426,22 @@ fn format_empty_struct_or_tuple(
         Some(ref s) if s.is_empty() => (),
         Some(ref s) => {
             if !is_single_line(s) || first_line_contains_single_line_comment(s) {
-                let nested_indent_str = offset
-                    .block_indent(context.config)
-                    .to_string_with_newline(context.config);
-                result.push_str(&nested_indent_str);
+                // Indent every comment line
+                for l in s.lines() {
+                    if l.trim_start().starts_with("//") {
+                        let nested_indent_str = offset
+                            .block_indent(context.config)
+                            .to_string_with_newline(context.config);
+                        result.push_str(&nested_indent_str);
+                    } else {
+                        result.push('\n');
+                    }
+                    result.push_str(l);
+                }
+            } else {
+                result.push_str(s);
             }
-            result.push_str(s);
+
             if last_line_contains_single_line_comment(s) {
                 result.push_str(&offset.to_string_with_newline(context.config));
             }
