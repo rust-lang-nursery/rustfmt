@@ -493,6 +493,8 @@ trait ChainFormatter {
 struct ChainFormatterShared<'a> {
     // The current working set of child items.
     children: &'a [ChainItem],
+    // The last chain item that is still part of the root
+    last_root_item: &'a ChainItem,
     // The current rewrites of items (includes trailing `?`s, but not any way to
     // connect the rewrites together).
     rewrites: Vec<String>,
@@ -507,6 +509,7 @@ impl<'a> ChainFormatterShared<'a> {
     fn new(chain: &'a Chain) -> ChainFormatterShared<'a> {
         ChainFormatterShared {
             children: &chain.children,
+            last_root_item: &chain.parent,
             rewrites: Vec::with_capacity(chain.children.len() + 1),
             fits_single_line: false,
             child_count: chain.children.len(),
@@ -670,13 +673,40 @@ impl<'a> ChainFormatterShared<'a> {
         let children_iter = self.children.iter();
         let iter = rewrite_iter.zip(children_iter);
 
+        let mut prev_item_was_field = matches!(
+            self.last_root_item.kind,
+            ChainItemKind::StructField(..)
+                | ChainItemKind::TupleField(..)
+                | ChainItemKind::Parent(ast::Expr {
+                    kind: ast::ExprKind::Field(..) | ast::ExprKind::Path(..),
+                    ..
+                })
+        );
+        let mut prev_item_was_comment = false;
         for (rewrite, chain_item) in iter {
             match chain_item.kind {
                 ChainItemKind::Comment(_, CommentPosition::Back) => result.push(' '),
                 ChainItemKind::Comment(_, CommentPosition::Top) => result.push_str(&connector),
+                ChainItemKind::StructField(..) | ChainItemKind::TupleField(..)
+                    if context.config.field_access_same_line() =>
+                {
+                    let would_overflow_line = {
+                        let current_line_len = result.len() - result.rfind('\n').unwrap_or(0);
+                        current_line_len + rewrite.len() > context.config.max_width()
+                    };
+                    if !prev_item_was_field || would_overflow_line || prev_item_was_comment {
+                        result.push_str(&connector);
+                    }
+                }
                 _ => result.push_str(&connector),
             }
             result.push_str(&rewrite);
+
+            prev_item_was_field = matches!(
+                chain_item.kind,
+                ChainItemKind::StructField(..) | ChainItemKind::TupleField(..)
+            );
+            prev_item_was_comment = matches!(chain_item.kind, ChainItemKind::Comment(..));
         }
 
         Some(result)
@@ -721,6 +751,7 @@ impl<'a> ChainFormatter for ChainFormatterBlock<'a> {
                 None => break,
             }
 
+            self.shared.last_root_item = item;
             root_ends_with_block = last_line_extendable(&root_rewrite);
 
             self.shared.children = &self.shared.children[1..];
@@ -823,6 +854,7 @@ impl<'a> ChainFormatter for ChainFormatterVisual<'a> {
                     self.offset = 0;
                 }
             }
+            self.shared.last_root_item = item;
 
             self.shared.children = &self.shared.children[1..];
         }

@@ -641,6 +641,33 @@ trailing whitespaces.
 - **Possible values**: `true`, `false`
 - **Stable**: No (tracking issue: #3392)
 
+## `field_access_same_line`
+
+Put subsequent field accesses on the same line in long expression chains.
+
+- **Default value**: `false`
+- **Possible values**: `true`, `false`
+- **Stable**: No (tracking issue: none)
+
+#### `false` (default):
+
+```rust
+fn main() {
+    self.serializer
+        .writer
+        .write_u32::<LittleEndian>(array_offset)?;
+}
+```
+
+#### `true`:
+
+```rust
+fn main() {
+    self.serializer.writer
+        .write_u32::<LittleEndian>(array_offset)?;
+}
+```
+
 ## `fn_args_layout`
 
 Control the layout of arguments in a function
