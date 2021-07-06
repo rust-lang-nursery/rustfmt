@@ -2006,6 +2006,69 @@ use dolor;
 use sit;
 ```
 
+## `righthand_indentation_strategy`
+
+Controls how the right-hand side of an assignment should be formatted if the expression does not fit on a single line. If the expression fits on the same line, this option is ignored.
+
+- **Default value**: `Heuristic`
+- **Possible values**: `Heuristic`, `SameLineAsLHS`, `NewlineIndentRHS`
+- **Stable**: No
+
+#### `Heuristic` (default):
+
+Use a heuristic approach to determine whether or not an expression should be on the same line as the left-hand side or moved to the next line.
+
+```rust
+fn main() {
+    let foo = bar().baz();
+
+    let bar: SomeWideResult + Send + Sync =
+        some_long_function_call().some_even_longer_function_call();
+
+    let baz = vec![1, 2, 3, 4, 5, 6, 7]
+        .into_iter()
+        .map(|x| x + 1)
+        .fold(0, |sum, i| sum + 1);
+}
+```
+
+#### `SameLineAsLHS`:
+
+If there is some valid formatting that allows part of the expression to be on the same line as the left-hand side, prefer that over a newline-indent.
+
+```rust
+fn main() {
+    let foo = bar().baz();
+
+    let bar: SomeWideResult + Send + Sync = some_long_function_call()
+        .some_even_longer_function_call();
+
+    let baz = vec![1, 2, 3, 4, 5, 6, 7]
+        .into_iter()
+        .map(|x| x + 1)
+        .fold(0, |sum, i| sum + 1);
+}
+```
+
+#### `NewlineIndentRHS`
+
+If there is some valid formatting that allows the expression to be placed indented on the next line, prefer that over placing it next to the left-hand side.
+
+```rust
+fn main() {
+    let foo = bar().baz();
+
+    let bar: SomeWideResult + Send + Sync =
+        some_long_function_call().some_even_longer_function_call();
+
+    let baz =
+        vec![1, 2, 3, 4, 5, 6, 7]
+            .into_iter()
+            .map(|x| x + 1)
+            .fold(0, |sum, i| sum + 1);
+}
+```
+
 ## `group_imports`
 
 Controls the strategy for how imports are grouped together.

@@ -442,3 +442,44 @@ pub enum MatchArmLeadingPipe {
     /// Preserve any existing leading pipes
     Preserve,
 }
+
+/// Controls how "right-hand" expressions (assignment and match bodies)
+/// should be rendered if the right-hand side does not fit on a single line
+/// but might possibly fit on a single line if we newline-indent.
+#[config_type]
+pub enum RightHandIndentationStrategy {
+    /// Use the `prefer_next_line` heuristic (default behavior, equivalent to old
+    /// rustfmt versions that did not support this option).
+    ///
+    /// let foo =
+    ///    bar().baz().boo();
+    ///
+    /// | SomeEnum =>
+    ///    bar().baz().boo()
+    Heuristic,
+    /// If the expression doesn't fit on a single line, split it but leave the first
+    /// line on the same line as the left-hand (even if indenting may have the expression
+    /// fit entirely):
+    ///
+    /// let foo = bar()
+    ///    .baz()
+    ///    .boo();
+    ///
+    /// | SomeEnum => bar()
+    ///    .baz()
+    ///    .boo()
+    SameLineAsLHS,
+    /// If the expression doesn't fit on a single line, split it and indent the first
+    /// line on the line below the left-hand.
+    ///
+    /// let foo =
+    ///     bar()
+    ///         .baz()
+    ///         .boo();
+    ///
+    /// | SomeEnum =>
+    ///     bar()
+    ///         .baz()
+    ///         .boo()
+    NewlineIndentRHS,
+}

@@ -13,7 +13,9 @@ use crate::comment::{
     rewrite_missing_comment, CharClasses, FindUncommented,
 };
 use crate::config::lists::*;
-use crate::config::{Config, ControlBraceStyle, IndentStyle, Version};
+use crate::config::{
+    Config, ControlBraceStyle, IndentStyle, RightHandIndentationStrategy, Version,
+};
 use crate::lists::{
     definitive_tactic, itemize_list, shape_for_tactic, struct_lit_formatting, struct_lit_shape,
     struct_lit_tactic, write_list, ListFormatting, Separator,
@@ -1945,6 +1947,8 @@ fn choose_rhs<R: Rewrite>(
         Some(ref new_str)
             if !new_str.contains('\n') && unicode_str_width(new_str) <= shape.width =>
         {
+            // The entire expression fits on the same line, so no need to attempt
+            // a rendering on the new line.
             Some(format!(" {}", new_str))
         }
         _ => {
@@ -1958,26 +1962,76 @@ fn choose_rhs<R: Rewrite>(
                 .to_string_with_newline(context.config);
             let before_space_str = if has_rhs_comment { "" } else { " " };
 
-            match (orig_rhs, new_rhs) {
-                (Some(ref orig_rhs), Some(ref new_rhs))
-                    if wrap_str(new_rhs.clone(), context.config.max_width(), new_shape)
-                        .is_none() =>
-                {
+            // We've now tried to lay out the expression both on the same line as the
+            // lhs (in `orig_rhs`) and on the next line with an indent (`new_rhs`).
+            // We now need to figure out how we're going to render this based on how
+            // the user has configured rhs rendering. Before that, some trivial cases.
+
+            // We had a correct layout for the same line, but not indented. This should
+            // rarely happen, but might happen if the lhs is less wide than the configured
+            // indentation width (meaning the rhs effectively has more room on the same
+            // line than it does on the next line). Just use the one that we know works.
+            if orig_rhs.is_some() && new_rhs.is_none() {
+                // TODO: If the user has `NewlineIndentRHS` configured, should we return
+                // none instead of defaulting to the same line (even though the user doesn't
+                // want that?). Should we instead expand the width of the newline until we
+                // can fit something inside it?
+                return Some(format!("{}{}", before_space_str, orig_rhs.unwrap()));
+            }
+
+            // We had a correct layout for the indented line, but not for the original one.
+            // This is effectively the reverse of the above condition.
+            if orig_rhs.is_none() && new_rhs.is_some() {
+                // TODO: If the user has `SameLineAsLHS` configured, should we return none
+                // instead of defaulting to the same line? Should we instead expand the
+                // width of the lhs line until we can fit something inside it?
+                return Some(format!("{}{}", new_indent_str, new_rhs.unwrap()));
+            }
+
+            // We couldn't render any of the two conditions...
+            if orig_rhs.is_none() && orig_rhs.is_none() {
+                // ...however, the caller has allowed us to exceed the maximum width.
+                if rhs_tactics == RhsTactics::AllowOverflow {
+                    let shape = shape.infinite_width();
+
+                    return expr
+                        .rewrite(context, shape)
+                        .map(|s| format!("{}{}", before_space_str, s));
+                }
+
+                // We aren't allowed to overflow but we can't render either variant.
+                return None;
+            }
+
+            // We're now in a situation where we know for sure that both same-line and
+            // new-line rendering has resulted in a solution.
+            let orig_rhs = orig_rhs.as_ref().unwrap();
+            let new_rhs = new_rhs.as_ref().unwrap();
+
+            // If we're not able to wrap the new right hand side within the width configured,
+            // instead fall back to the original that fits on the same line.
+            if wrap_str(new_rhs.clone(), context.config.max_width(), new_shape).is_none() {
+                // TODO: Same issue with `NewlineIndentRHS` discussed earlier.
+                return Some(format!("{}{}", before_space_str, orig_rhs));
+            }
+
+            // Now we need to do things differently based on what the user has configured.
+            match context.config.righthand_indentation_strategy() {
+                RightHandIndentationStrategy::Heuristic => {
+                    // Heuristic/old approach. Check whether we should prefer the next line,
+                    // and then return either the next line or the current line.
+                    if prefer_next_line(orig_rhs, new_rhs, rhs_tactics) {
+                        Some(format!("{}{}", new_indent_str, new_rhs))
+                    } else {
+                        Some(format!("{}{}", before_space_str, orig_rhs))
+                    }
+                }
+                RightHandIndentationStrategy::SameLineAsLHS => {
                     Some(format!("{}{}", before_space_str, orig_rhs))
                 }
-                (Some(ref orig_rhs), Some(ref new_rhs))
-                    if prefer_next_line(orig_rhs, new_rhs, rhs_tactics) =>
-                {
+                RightHandIndentationStrategy::NewlineIndentRHS => {
                     Some(format!("{}{}", new_indent_str, new_rhs))
                 }
-                (None, Some(ref new_rhs)) => Some(format!("{}{}", new_indent_str, new_rhs)),
-                (None, None) if rhs_tactics == RhsTactics::AllowOverflow => {
-                    let shape = shape.infinite_width();
-                    expr.rewrite(context, shape)
-                        .map(|s| format!("{}{}", before_space_str, s))
-                }
-                (None, None) => None,
-                (Some(orig_rhs), _) => Some(format!("{}{}", before_space_str, orig_rhs)),
             }
         }
     }
