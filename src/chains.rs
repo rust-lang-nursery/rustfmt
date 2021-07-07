@@ -93,7 +93,27 @@ pub(crate) fn rewrite_chain(
 
 #[derive(Debug)]
 enum CommentPosition {
+    /// Comment group is not contained on their own lines:
+    ///
+    /// ```
+    /// function() // comment
+    ///     // comment
+    ///     .function()
+    ///
+    /// function() /* comment */ .function()
+    ///
+    /// function()
+    ///     /* comment */ .function()
+    /// ```
     Back,
+    /// Comment group is contained on their own lines:
+    ///
+    /// ```
+    /// function()
+    ///     // comment
+    ///     // comment
+    ///     .function()
+    /// ```
     Top,
 }
 
@@ -670,13 +690,27 @@ impl<'a> ChainFormatterShared<'a> {
         let children_iter = self.children.iter();
         let iter = rewrite_iter.zip(children_iter);
 
+        let mut prev_item_was_comment = false;
         for (rewrite, chain_item) in iter {
             match chain_item.kind {
                 ChainItemKind::Comment(_, CommentPosition::Back) => result.push(' '),
                 ChainItemKind::Comment(_, CommentPosition::Top) => result.push_str(&connector),
+                ChainItemKind::Await if context.config.await_same_line() => {
+                    let would_overflow_line = {
+                        let current_line_len = result.len() - result.rfind('\n').unwrap_or(0);
+                        current_line_len + rewrite.len() > child_shape.width
+                    };
+                    // Don't put .await on same line if it would overflow max width or if it's
+                    // preceded by a comment (`/* comment */.await` is weird)
+                    if would_overflow_line || prev_item_was_comment {
+                        result.push_str(&connector)
+                    }
+                }
                 _ => result.push_str(&connector),
             }
             result.push_str(&rewrite);
+
+            prev_item_was_comment = matches!(chain_item.kind, ChainItemKind::Comment(..));
         }
 
         Some(result)

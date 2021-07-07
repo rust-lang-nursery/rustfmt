@@ -41,6 +41,39 @@ By default this option is set as a percentage of [`max_width`](#max_width) provi
 
 See also [`max_width`](#max_width) and [`use_small_heuristics`](#use_small_heuristics)
 
+## `await_same_line`
+
+Put `.await` on the same line as the preceding expression in long expression chains.
+
+- **Default value**: `false`
+- **Possible values**: `true`, `false`
+- **Stable**: No (tracking issue: none)
+
+#### `false` (default):
+
+```rust
+fn main() {
+    async_function()
+        .await
+        .async_function()
+        .await?
+        .async_function()
+        .await
+        .some_field;
+}
+```
+
+#### `true`:
+
+```rust
+fn main() {
+    async_function().await
+        .async_function().await?
+        .async_function().await
+        .some_field;
+}
+```
+
 ## `binop_separator`
 
 Where to put a binary operator when a binary expression goes multiline.
