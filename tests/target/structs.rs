@@ -373,3 +373,21 @@ struct CommentsTup(
     // With break
     // Yes
 );
+
+struct CommentsBlock {
+    // some block
+    // that is some block
+    // - a
+    // - b
+    // - c
+}
+
+struct TupleWithBlock(
+    // abcd
+    // efg
+);
+
+struct TupleWithBlockIndent(
+    // abcd
+    // efg
+);
