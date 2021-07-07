@@ -569,6 +569,7 @@ impl<'b, 'a: 'b> FmtVisitor<'a> {
                             item.ident,
                             &fn_signature,
                             generics,
+                            &item.vis,
                             item.span,
                         );
                         self.push_rewrite(item.span, rewrite);
@@ -639,13 +640,13 @@ impl<'b, 'a: 'b> FmtVisitor<'a> {
             ast::AssocItemKind::Const(..) => self.visit_static(&StaticParts::from_trait_item(ti)),
             ast::AssocItemKind::Fn(ref fn_kind) => {
                 let ast::FnKind(defaultness, ref sig, ref generics, ref block) = **fn_kind;
+                let vis = ast::Visibility {
+                    kind: ast::VisibilityKind::Inherited,
+                    span: DUMMY_SP,
+                    tokens: None,
+                };
                 if let Some(ref body) = block {
                     let inner_attrs = inner_attributes(&ti.attrs);
-                    let vis = ast::Visibility {
-                        kind: ast::VisibilityKind::Inherited,
-                        span: DUMMY_SP,
-                        tokens: None,
-                    };
                     let fn_ctxt = visit::FnCtxt::Assoc(visit::AssocCtxt::Trait);
                     self.visit_fn(
                         visit::FnKind::Fn(fn_ctxt, ti.ident, sig, &vis, Some(body)),
@@ -658,7 +659,7 @@ impl<'b, 'a: 'b> FmtVisitor<'a> {
                 } else {
                     let indent = self.block_indent;
                     let rewrite =
-                        self.rewrite_required_fn(indent, ti.ident, sig, generics, ti.span);
+                        self.rewrite_required_fn(indent, ti.ident, sig, generics, &vis, ti.span);
                     self.push_rewrite(ti.span, rewrite);
                 }
             }
@@ -708,7 +709,7 @@ impl<'b, 'a: 'b> FmtVisitor<'a> {
                 } else {
                     let indent = self.block_indent;
                     let rewrite =
-                        self.rewrite_required_fn(indent, ii.ident, sig, generics, ii.span);
+                        self.rewrite_required_fn(indent, ii.ident, sig, generics, &ii.vis, ii.span);
                     self.push_rewrite(ii.span, rewrite);
                 }
             }

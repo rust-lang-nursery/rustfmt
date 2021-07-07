@@ -323,6 +323,7 @@ impl<'a> FmtVisitor<'a> {
         ident: Ident,
         sig: &ast::FnSig,
         generics: &ast::Generics,
+        vis: &ast::Visibility,
         span: Span,
     ) -> Option<String> {
         // Drop semicolon or it will be interpreted as comment.
@@ -333,7 +334,7 @@ impl<'a> FmtVisitor<'a> {
             &context,
             indent,
             ident,
-            &FnSig::from_method_sig(sig, generics, DEFAULT_VISIBILITY),
+            &FnSig::from_method_sig(sig, generics, vis.clone()),
             span,
             FnBraceStyle::None,
         )?;
