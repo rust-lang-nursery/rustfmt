@@ -296,3 +296,40 @@ struct Test {
 // #2818
 struct Paren((i32)) where i32: Trait;
 struct Parens((i32, i32)) where i32: Trait;
+
+// #4854
+struct Comments {
+// Hello, this is my
+    // struct where I haven't added
+// any fields yet.
+        // This is weird
+}
+
+struct CommentsTup(
+    // Ok comment
+    // Very good
+    // Don't format me pls
+
+    // With break
+// Yes
+);
+
+struct CommentsBlock {
+/* some block
+that is some block
+    - a
+    - b
+    - c
+ */ }
+
+struct TupleWithBlock(
+/* abcd
+ * efg
+ */
+);
+
+struct TupleWithBlockIndent(
+    /* abcd
+     * efg
+     */
+);

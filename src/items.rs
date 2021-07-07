@@ -1422,22 +1422,26 @@ fn format_empty_struct_or_tuple(
         result.push_str(&offset.to_string_with_newline(context.config))
     }
     result.push_str(opener);
-    match rewrite_missing_comment(span, Shape::indented(offset, context.config), context) {
-        Some(ref s) if s.is_empty() => (),
-        Some(ref s) => {
-            if !is_single_line(s) || first_line_contains_single_line_comment(s) {
-                let nested_indent_str = offset
-                    .block_indent(context.config)
-                    .to_string_with_newline(context.config);
-                result.push_str(&nested_indent_str);
-            }
-            result.push_str(s);
-            if last_line_contains_single_line_comment(s) {
-                result.push_str(&offset.to_string_with_newline(context.config));
-            }
+
+    let mut visitor = FmtVisitor::from_context(context);
+    let item_indent = offset.block_only().block_indent(context.config);
+    visitor.block_indent = item_indent.clone();
+    visitor.last_pos = span.lo();
+
+    visitor.format_missing_no_indent(span.hi());
+
+    if !is_empty_line(&visitor.buffer) {
+        if is_single_line(visitor.buffer.trim()) {
+            result.push_str(&format!(
+                "\n{}{}\n",
+                item_indent.to_string(context.config),
+                visitor.buffer.trim()
+            ));
+        } else {
+            result.push_str(&visitor.buffer);
         }
-        None => result.push_str(context.snippet(span)),
     }
+
     result.push_str(closer);
 }
 
