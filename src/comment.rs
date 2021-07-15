@@ -671,9 +671,15 @@ impl<'a> CommentRewrite<'a> {
                     }
                 };
                 if !code_block.is_empty() {
-                    self.result.push_str(&self.comment_line_separator);
-                    self.result
-                        .push_str(&Self::join_block(&code_block, &self.comment_line_separator));
+                    // Ensure no trailing blanks for empty code lines
+                    if code_block.trim_end().is_empty() {
+                        self.result
+                            .push_str(&self.comment_line_separator.trim_end());
+                    } else {
+                        self.result.push_str(&self.comment_line_separator);
+                        self.result
+                            .push_str(&Self::join_block(&code_block, &self.comment_line_separator));
+                    }
                 }
                 self.code_block_buffer.clear();
                 self.result.push_str(&self.comment_line_separator);
