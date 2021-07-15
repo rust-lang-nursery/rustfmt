@@ -1047,6 +1047,13 @@ fn lorem() -> usize {
 
 See also: [`tab_spaces`](#tab_spaces).
 
+## `hex_literal_case`
+
+Change the case of the letters in hexadecimal literal values
+
+- **Default value**: `Ignore`
+- **Possible values**: `ToUpper`, `ToLower`
+- **Stable**: No
 
 ## `hide_parse_errors`
 

@@ -127,6 +127,17 @@ pub enum ImportGranularity {
     Item,
 }
 
+/// Controls how rustfmt should handle case in hexadecimal literals.
+#[config_type]
+pub enum HexLiteralCase {
+    /// Leave the literal as-is
+    Ignore,
+    /// Uppercase the literal
+    ToUpper,
+    /// Lowercase the literal
+    ToLower,
+}
+
 #[config_type]
 pub enum ReportTactic {
     Always,
